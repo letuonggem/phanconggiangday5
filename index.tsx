@@ -110,6 +110,7 @@ const App = () => {
         const [editingId, setEditingId] = useState<string | null>(null);
         const [editState, setEditState] = useState<{name: string, roles: string[]}>({ name: '', roles: [] });
         const [newTeacherRoles, setNewTeacherRoles] = useState<string[]>([]);
+        const [showRoleDropdown, setShowRoleDropdown] = useState<string | null>(null); // 'adding' or 'editing-ID'
         const fileRef = useRef<HTMLInputElement>(null);
         
         const weekData = getWeekData(currentWeek);
@@ -118,6 +119,7 @@ const App = () => {
         const startEditing = (teacher: any) => {
             setEditingId(teacher.id);
             setEditState({ name: teacher.name, roles: teacher.roles || [] });
+            setShowRoleDropdown(null);
         };
 
         const toggleEditRole = (roleName: string) => {
@@ -138,6 +140,7 @@ const App = () => {
             );
             updateWeekData(currentWeek, { teachers: newTeachers });
             setEditingId(null);
+            setShowRoleDropdown(null);
             setSyncStatus({ message: 'Đã cập nhật GV tại tuần ' + currentWeek, type: 'success' });
             setTimeout(() => setSyncStatus({ message: '', type: '' }), 2000);
         };
@@ -255,15 +258,29 @@ const App = () => {
                                 <label className="text-[10px] font-black text-blue-500 uppercase ml-2 tracking-widest">Lớp dạy</label>
                                 <input type="text" placeholder="6A1, 7B2..." className="w-full p-4 rounded-2xl border-none shadow-sm font-bold focus:ring-2 focus:ring-blue-500" id="new-cls"/>
                             </div>
-                            <div className="space-y-1">
-                                <label className="text-[10px] font-black text-blue-500 uppercase ml-2 tracking-widest">Chức vụ kiêm nhiệm</label>
-                                <div className="flex flex-wrap gap-1 max-h-32 overflow-y-auto p-3 bg-white rounded-2xl shadow-sm border border-slate-100">
-                                    {data.roles.map((r: any) => (
-                                        <button key={r.id} onClick={() => toggleNewRole(r.name)} className={`text-[10px] px-3 py-1.5 rounded-xl border font-black transition-all ${newTeacherRoles.includes(r.name) ? 'bg-blue-600 text-white border-blue-600' : 'bg-slate-50 text-slate-400 border-slate-200 hover:border-blue-300'}`}>
-                                            {r.name}
-                                        </button>
-                                    ))}
+                            <div className="space-y-1 relative">
+                                <label className="text-[10px] font-black text-blue-500 uppercase ml-2 tracking-widest">Công việc kiêm nhiệm</label>
+                                <div 
+                                    onClick={() => setShowRoleDropdown(showRoleDropdown === 'adding' ? null : 'adding')}
+                                    className="w-full p-4 bg-white rounded-2xl shadow-sm border border-slate-100 font-bold text-slate-400 text-sm flex justify-between items-center cursor-pointer"
+                                >
+                                    <span className="truncate">{newTeacherRoles.length > 0 ? newTeacherRoles.join(', ') : 'Chọn chức vụ...'}</span>
+                                    <ChevronDown size={18} className={`transition-transform ${showRoleDropdown === 'adding' ? 'rotate-180' : ''}`} />
                                 </div>
+                                {showRoleDropdown === 'adding' && (
+                                    <div className="absolute top-full left-0 w-full mt-2 bg-white rounded-2xl shadow-xl border border-slate-100 z-50 p-2 max-h-60 overflow-y-auto">
+                                        {data.roles.map((r: any) => (
+                                            <div 
+                                                key={r.id} 
+                                                onClick={() => toggleNewRole(r.name)}
+                                                className={`p-3 rounded-xl mb-1 cursor-pointer flex items-center justify-between transition-colors ${newTeacherRoles.includes(r.name) ? 'bg-blue-50 text-blue-600' : 'hover:bg-slate-50 text-slate-600'}`}
+                                            >
+                                                <span className="font-bold text-sm">{r.name}</span>
+                                                {newTeacherRoles.includes(r.name) && <Check size={16} />}
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
                             </div>
                             <div className="pt-5">
                                 <button onClick={() => {
@@ -278,6 +295,7 @@ const App = () => {
                                     });
                                     setIsAdding(false);
                                     setNewTeacherRoles([]);
+                                    setShowRoleDropdown(null);
                                 }} className="w-full bg-blue-600 text-white p-4 rounded-2xl font-black flex items-center justify-center gap-2 shadow-lg hover:bg-blue-700 transition-all"><Plus size={20}/> THÊM MỚI</button>
                             </div>
                         </div>
@@ -308,12 +326,28 @@ const App = () => {
                                             {isEditing ? (
                                                 <div className="space-y-3">
                                                     <input className="font-bold border-2 border-blue-100 rounded-xl p-3 w-full outline-none focus:border-blue-500 shadow-sm" value={editState.name} onChange={e => setEditState({...editState, name: e.target.value})}/>
-                                                    <div className="flex flex-wrap gap-1 p-2 bg-white rounded-xl border border-slate-100">
-                                                        {data.roles.map((r: any) => (
-                                                            <button key={r.id} onClick={() => toggleEditRole(r.name)} className={`text-[9px] px-2.5 py-1 rounded-lg border font-black transition-all ${editState.roles.includes(r.name) ? 'bg-blue-600 text-white border-blue-600' : 'bg-slate-50 text-slate-400 border-slate-200'}`}>
-                                                                {r.name}
-                                                            </button>
-                                                        ))}
+                                                    <div className="relative">
+                                                        <div 
+                                                            onClick={() => setShowRoleDropdown(showRoleDropdown === `editing-${t.id}` ? null : `editing-${t.id}`)}
+                                                            className="w-full p-2 bg-white rounded-xl shadow-inner border border-slate-100 font-bold text-slate-600 text-[10px] flex justify-between items-center cursor-pointer"
+                                                        >
+                                                            <span className="truncate">{editState.roles.length > 0 ? editState.roles.join(', ') : 'Chọn chức vụ...'}</span>
+                                                            <ChevronDown size={14} className={`transition-transform ${showRoleDropdown === `editing-${t.id}` ? 'rotate-180' : ''}`} />
+                                                        </div>
+                                                        {showRoleDropdown === `editing-${t.id}` && (
+                                                            <div className="absolute top-full left-0 w-full mt-2 bg-white rounded-2xl shadow-2xl border border-slate-100 z-50 p-2 max-h-48 overflow-y-auto">
+                                                                {data.roles.map((r: any) => (
+                                                                    <div 
+                                                                        key={r.id} 
+                                                                        onClick={() => toggleEditRole(r.name)}
+                                                                        className={`p-2 rounded-lg mb-1 cursor-pointer flex items-center justify-between transition-colors ${editState.roles.includes(r.name) ? 'bg-blue-50 text-blue-600' : 'hover:bg-slate-50 text-slate-600'}`}
+                                                                    >
+                                                                        <span className="font-bold text-[10px]">{r.name}</span>
+                                                                        {editState.roles.includes(r.name) && <Check size={12} />}
+                                                                    </div>
+                                                                ))}
+                                                            </div>
+                                                        )}
                                                     </div>
                                                 </div>
                                             ) : (
@@ -371,7 +405,7 @@ const App = () => {
 
     // --- TAB THỰC DẠY (LŨY KẾ THEO DẢI TUẦN) ---
     const WeeklyTab = () => {
-        // Gom dữ liệu theo TÊN giáo viên để gộp dòng trong dải tuần
+        // Gom dữ liệu theo TÊN giáo viên để gộp dòng duy nhất trong dải tuần
         const stats = useMemo(() => {
             const teacherAggregates: Record<string, { name: string, tkb: number, bu: number, tang: number }> = {};
             
@@ -387,7 +421,8 @@ const App = () => {
                     }
                     
                     const log = record.logs?.[t.id] || { bu: 0, tang: 0 };
-                    const currentTkb = (log.actual !== undefined) ? log.actual : getTKBPeriods(record.assignments[t.id] || "");
+                    // Nếu log có giá trị actual thì dùng, nếu không thì tính từ assignments
+                    const currentTkb = (log.actual !== undefined && log.actual !== null) ? log.actual : getTKBPeriods(record.assignments[t.id] || "");
                     
                     teacherAggregates[key].tkb += currentTkb;
                     teacherAggregates[key].bu += (log.bu || 0);
@@ -417,7 +452,7 @@ const App = () => {
                     </div>
                     <div className="text-right">
                         <h2 className="text-3xl font-black text-slate-800 tracking-tighter uppercase italic">Tổng hợp Thực dạy</h2>
-                        <p className="text-slate-400 font-bold text-xs uppercase tracking-widest mt-1">Dữ liệu gộp dòng & lũy kế</p>
+                        <p className="text-slate-400 font-bold text-xs uppercase tracking-widest mt-1">Dữ liệu gộp dòng & lũy kế theo tên</p>
                     </div>
                 </div>
 
@@ -439,7 +474,7 @@ const App = () => {
                                     <tr key={i} className="border-b hover:bg-slate-50/50 transition-all">
                                         <td className="p-10">
                                             <div className="font-black text-slate-700 text-2xl">{s.name}</div>
-                                            <div className="text-[10px] font-bold text-slate-300 uppercase mt-1 tracking-widest">Gộp {endRange - startRange + 1} tuần</div>
+                                            <div className="text-[10px] font-bold text-slate-300 uppercase mt-1 tracking-widest">Gộp lũy kế {endRange - startRange + 1} tuần</div>
                                         </td>
                                         <td className="p-10 text-center font-black text-slate-400 text-3xl">
                                             {s.tkb % 1 === 0 ? s.tkb : s.tkb.toFixed(1)}
