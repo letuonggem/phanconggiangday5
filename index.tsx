@@ -11,7 +11,7 @@ import {
 } from 'lucide-react';
 
 // --- CẤU HÌNH HỆ THỐNG ---
-const STORAGE_KEY = 'thcs_teaching_mgmt_v6_5_final';
+const STORAGE_KEY = 'thcs_teaching_mgmt_v6_6_final';
 
 const DEFAULT_SUBJECT_CONFIGS = [
     { name: 'Toán', periods: 4 }, { name: 'Ngữ văn', periods: 4 },
@@ -115,6 +115,37 @@ const App = () => {
         
         const weekData = getWeekData(currentWeek);
         const { teachers, assignments, logs = {} } = weekData;
+
+        // Logic kiểm tra trùng lớp
+        const classConflicts = useMemo(() => {
+            const classToTeachers: Record<string, string[]> = {};
+            Object.entries(assignments).forEach(([tId, assignStr]) => {
+                if (!assignStr) return;
+                const teacher = teachers.find(tx => tx.id === tId);
+                if (!teacher) return;
+                
+                // Parse "Toán: 6A1, 6A2; Văn: 6A3"
+                (assignStr as string).split(';').forEach(part => {
+                    const colonIdx = part.indexOf(':');
+                    if (colonIdx === -1) return;
+                    const classesPart = part.substring(colonIdx + 1);
+                    const classes = classesPart.split(',').map(c => c.trim().toUpperCase()).filter(c => c);
+                    
+                    classes.forEach(cls => {
+                        if (!classToTeachers[cls]) classToTeachers[cls] = [];
+                        if (!classToTeachers[cls].includes(teacher.name)) {
+                            classToTeachers[cls].push(teacher.name);
+                        }
+                    });
+                });
+            });
+            
+            const conflicts: Record<string, string[]> = {};
+            Object.entries(classToTeachers).forEach(([cls, names]) => {
+                if (names.length > 1) conflicts[cls] = names;
+            });
+            return conflicts;
+        }, [assignments, teachers]);
 
         const startEditing = (teacher: any) => {
             setEditingId(teacher.id);
@@ -320,6 +351,16 @@ const App = () => {
                                 const tkbCount = getTKBPeriods(assignment);
                                 const log = logs[t.id] || { bu: 0, tang: 0 };
                                 const isEditing = editingId === t.id;
+
+                                // Phân tích các lớp của giáo viên này để kiểm tra trùng
+                                const teacherClasses = assignment.split(';').flatMap((p: string) => {
+                                    const cIdx = p.indexOf(':');
+                                    if (cIdx === -1) return [];
+                                    return p.substring(cIdx+1).split(',').map(c => c.trim().toUpperCase()).filter(c => c);
+                                });
+                                const teacherConflictingClasses = teacherClasses.filter(c => !!classConflicts[c]);
+                                const hasConflict = teacherConflictingClasses.length > 0;
+
                                 return (
                                     <tr key={t.id} className="border-b hover:bg-slate-50/50 transition-all">
                                         <td className="p-8">
@@ -363,8 +404,33 @@ const App = () => {
                                                 </div>
                                             )}
                                         </td>
-                                        <td className="p-8">
-                                            <input type="text" className="w-full p-3 bg-slate-50 rounded-xl border-none font-bold text-slate-600 text-sm shadow-inner focus:ring-2 focus:ring-blue-100" value={assignment} onChange={e => updateWeekData(currentWeek, { assignments: { ...assignments, [t.id]: e.target.value } })}/>
+                                        <td className="p-8 relative">
+                                            <div className="flex items-center gap-2">
+                                                <input 
+                                                    type="text" 
+                                                    className={`w-full p-3 rounded-xl border-none font-bold text-sm shadow-inner focus:ring-2 ${hasConflict ? 'bg-red-50 text-red-700 ring-red-100 focus:ring-red-200' : 'bg-slate-50 text-slate-600 focus:ring-blue-100'}`} 
+                                                    value={assignment} 
+                                                    onChange={e => updateWeekData(currentWeek, { assignments: { ...assignments, [t.id]: e.target.value } })}
+                                                />
+                                                {hasConflict && (
+                                                    <div className="group relative">
+                                                        <AlertTriangle className="text-red-500 shrink-0 animate-pulse cursor-help" size={20} />
+                                                        <div className="absolute bottom-full right-0 mb-2 w-64 bg-slate-900 text-white p-3 rounded-2xl text-[10px] font-bold shadow-2xl opacity-0 group-hover:opacity-100 transition-opacity z-[60] pointer-events-none border border-white/10">
+                                                            <div className="text-red-400 uppercase mb-1">Cảnh báo trùng lớp:</div>
+                                                            {teacherConflictingClasses.map(cls => (
+                                                                <div key={cls} className="mb-1 last:mb-0">
+                                                                    Lớp <span className="text-blue-400">{cls}</span> đang được dạy bởi: {classConflicts[cls].join(', ')}
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                    </div>
+                                                )}
+                                            </div>
+                                            {hasConflict && (
+                                                <div className="text-[9px] font-black text-red-500 mt-1 uppercase tracking-tighter">
+                                                    Trùng lớp: {teacherConflictingClasses.join(', ')}
+                                                </div>
+                                            )}
                                         </td>
                                         <td className="p-8 text-center font-black text-slate-800 text-2xl">{tkbCount}</td>
                                         <td className="p-8">
@@ -403,9 +469,9 @@ const App = () => {
         );
     };
 
-    // --- TAB THỰC DẠY (LŨY KẾ THEO DẢI TUẦN) ---
+    // --- TAB THỰC DẠY (LŨY KẾ TUYỆT ĐỐI THEO DẢI TUẦN) ---
     const WeeklyTab = () => {
-        // Gom dữ liệu theo TÊN giáo viên để gộp dòng duy nhất trong dải tuần
+        // Gom dữ liệu theo TÊN giáo viên để đảm bảo 1 giáo viên chỉ có 1 dòng duy nhất trong dải tuần
         const stats = useMemo(() => {
             const teacherAggregates: Record<string, { name: string, tkb: number, bu: number, tang: number }> = {};
             
@@ -414,14 +480,14 @@ const App = () => {
                 if (!record) continue;
 
                 record.teachers.forEach((t: any) => {
-                    // Dùng Tên làm khóa để gộp dòng (Trường hợp 1 người có ID khác nhau giữa các tuần)
+                    // Dùng Tên đã trim làm khóa để gộp dòng
                     const key = t.name.trim();
                     if (!teacherAggregates[key]) {
                         teacherAggregates[key] = { name: t.name, tkb: 0, bu: 0, tang: 0 };
                     }
                     
                     const log = record.logs?.[t.id] || { bu: 0, tang: 0 };
-                    // Nếu log có giá trị actual thì dùng, nếu không thì tính từ assignments
+                    // Tiết TKB: lấy từ snapshot hoặc tính mới nếu chưa có snapshot
                     const currentTkb = (log.actual !== undefined && log.actual !== null) ? log.actual : getTKBPeriods(record.assignments[t.id] || "");
                     
                     teacherAggregates[key].tkb += currentTkb;
@@ -452,7 +518,7 @@ const App = () => {
                     </div>
                     <div className="text-right">
                         <h2 className="text-3xl font-black text-slate-800 tracking-tighter uppercase italic">Tổng hợp Thực dạy</h2>
-                        <p className="text-slate-400 font-bold text-xs uppercase tracking-widest mt-1">Dữ liệu gộp dòng & lũy kế theo tên</p>
+                        <p className="text-slate-400 font-bold text-xs uppercase tracking-widest mt-1">Dữ liệu lũy kế 1 dòng / 1 người</p>
                     </div>
                 </div>
 
@@ -464,7 +530,7 @@ const App = () => {
                                 <th className="p-10 text-center">Tổng Tiết TKB</th>
                                 <th className="p-10 text-center text-orange-600">Tổng Dạy Bù</th>
                                 <th className="p-10 text-center text-orange-600">Tổng Tăng tiết</th>
-                                <th className="p-10 text-center bg-blue-50/50 text-blue-700">Tổng Thực dạy</th>
+                                <th className="p-10 text-center bg-blue-50/50 text-blue-700">Tổng Thực dạy (Lũy kế)</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -474,7 +540,7 @@ const App = () => {
                                     <tr key={i} className="border-b hover:bg-slate-50/50 transition-all">
                                         <td className="p-10">
                                             <div className="font-black text-slate-700 text-2xl">{s.name}</div>
-                                            <div className="text-[10px] font-bold text-slate-300 uppercase mt-1 tracking-widest">Gộp lũy kế {endRange - startRange + 1} tuần</div>
+                                            <div className="text-[10px] font-bold text-slate-300 uppercase mt-1 tracking-widest">Gộp dữ liệu dải tuần</div>
                                         </td>
                                         <td className="p-10 text-center font-black text-slate-400 text-3xl">
                                             {s.tkb % 1 === 0 ? s.tkb : s.tkb.toFixed(1)}
@@ -498,7 +564,7 @@ const App = () => {
                     {stats.length === 0 && (
                         <div className="p-32 text-center">
                             <RefreshCcw size={64} className="mx-auto text-slate-100 mb-6 animate-spin-slow" />
-                            <p className="font-black text-slate-300 uppercase tracking-widest text-sm italic">Không có dữ liệu trong dải tuần {startRange} - {endRange}</p>
+                            <p className="font-black text-slate-300 uppercase tracking-widest text-sm italic">Không có dữ liệu trong dải tuần đã chọn</p>
                         </div>
                     )}
                 </div>
@@ -506,7 +572,7 @@ const App = () => {
         );
     };
 
-    // --- TAB BÁO CÁO ---
+    // --- TAB BÁO CÁO (TÍNH THEO TÊN) ---
     const ReportTab = () => {
         const [reportWeeks, setReportWeeks] = useState(4);
         
@@ -555,7 +621,7 @@ const App = () => {
                     <div>
                         <h2 className="text-4xl font-black text-slate-800 tracking-tighter uppercase italic">Quyết toán Tiết dạy</h2>
                         <p className="text-slate-400 font-bold uppercase text-[10px] tracking-widest flex items-center gap-2 mt-1">
-                            <Info size={14} className="text-blue-500"/> Lũy kế từ Tuần 1 đến Tuần {reportWeeks} (Gộp theo tên)
+                            <Info size={14} className="text-blue-500"/> Lũy kế từ Tuần 1 đến Tuần {reportWeeks} (Gộp theo tên giáo viên)
                         </p>
                     </div>
                     <div className="bg-slate-100 p-4 rounded-[2.5rem] flex items-center gap-4 shadow-inner border border-slate-200">
@@ -580,7 +646,7 @@ const App = () => {
                                 <tr key={i} className="border-b hover:bg-slate-50/50 transition-all">
                                     <td className="p-8">
                                         <div className="font-black text-slate-700 text-xl">{s.name}</div>
-                                        <div className="text-[9px] font-bold text-slate-300 uppercase mt-1">Định mức chuẩn: {s.lastQ}t/tuần</div>
+                                        <div className="text-[9px] font-bold text-slate-300 uppercase mt-1">Định mức gần nhất: {s.lastQ}t/tuần</div>
                                     </td>
                                     <td className="p-8 text-center font-black text-slate-400 text-xl">{s.totalQuota.toFixed(1)}</td>
                                     <td className="p-8 text-center font-black text-slate-800 text-2xl">{s.totalActual.toFixed(1)}</td>
@@ -604,7 +670,7 @@ const App = () => {
                 <div className="container mx-auto flex flex-col md:flex-row justify-between items-center gap-8">
                     <div className="flex items-center gap-5">
                         <div className="bg-blue-600 p-4 rounded-[1.5rem] text-white shadow-2xl rotate-3"><LayoutDashboard size={32}/></div>
-                        <h1 className="font-black text-3xl tracking-tighter text-slate-800 uppercase italic">THCS PRO <span className="text-blue-600 text-sm align-top italic font-black">v6.5</span></h1>
+                        <h1 className="font-black text-3xl tracking-tighter text-slate-800 uppercase italic">THCS PRO <span className="text-blue-600 text-sm align-top italic font-black">v6.6</span></h1>
                     </div>
                     <nav className="flex gap-2 bg-slate-100 p-2 rounded-[2.5rem] overflow-x-auto no-scrollbar">
                         {[
