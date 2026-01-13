@@ -10,7 +10,7 @@ import {
 } from 'lucide-react';
 
 // --- CẤU HÌNH HỆ THỐNG ---
-const STORAGE_KEY = 'thcs_mgmt_v4_perf';
+const STORAGE_KEY = 'thcs_mgmt_v4_perf_validation';
 
 const DEFAULT_SUBJECT_CONFIGS = [
     { name: 'Toán', periods: 4 },
@@ -29,13 +29,54 @@ const DEFAULT_SUBJECT_CONFIGS = [
     { name: 'HĐTN - HN', periods: 3 }
 ];
 
-// --- HÀM TRỢ GIÚP ---
+// --- HÀM TRỢ GIÚP CHUẨN HÓA & KIỂM TRA ---
 const normalizeClassStr = (str: string) => {
     if (!str) return '';
     return str.split(',')
               .map(s => s.trim().replace(/\s+/g, '').toUpperCase())
               .filter(s => s)
               .join(', ');
+};
+
+// Hàm tìm xung đột phân công
+const findConflicts = (proposedAssignments: string, currentTeachers: any[], excludeTeacherId?: string) => {
+    const conflicts: string[] = [];
+    if (!proposedAssignments) return conflicts;
+
+    const newParts = proposedAssignments.split(';');
+
+    newParts.forEach(part => {
+        const [subPart, clsPart] = part.split(':');
+        if (!subPart || !clsPart) return;
+
+        const subject = subPart.trim().toLowerCase();
+        const inputClasses = clsPart.split(',')
+            .map(c => c.trim().toUpperCase().replace(/\s+/g, ''))
+            .filter(c => c);
+
+        currentTeachers.forEach(teacher => {
+            if (excludeTeacherId && teacher.id === excludeTeacherId) return;
+
+            const existingParts = teacher.assignments.split(';');
+            existingParts.forEach(exPart => {
+                const [exSub, exClsPart] = exPart.split(':');
+                if (!exSub || !exClsPart) return;
+
+                if (exSub.trim().toLowerCase() === subject) {
+                    const exClasses = exClsPart.split(',')
+                        .map(c => c.trim().toUpperCase().replace(/\s+/g, ''))
+                        .filter(c => c);
+
+                    inputClasses.forEach(c => {
+                        if (exClasses.includes(c)) {
+                            conflicts.push(`Lớp ${c} (môn ${subPart.trim()}) đã được dạy bởi "${teacher.name}"`);
+                        }
+                    });
+                }
+            });
+        });
+    });
+    return conflicts;
 };
 
 const App = () => {
@@ -60,9 +101,8 @@ const App = () => {
 
     const updateData = (newData: any) => setData((prev: any) => ({ ...prev, ...newData }));
 
-    // --- LOGIC TÍNH TIẾT (Memoized để tránh lag) ---
+    // --- LOGIC TÍNH TIẾT (Memoized) ---
     const getTeacherPeriods = useMemo(() => {
-        // Fix TS2362: Explicitly type configMap and ensure periods are numbers to avoid errors on arithmetic operations
         const configMap = new Map<string, number>(
             (data.subjectConfigs || []).map((s: any) => [String(s.name).toLowerCase(), Number(s.periods)])
         );
@@ -75,7 +115,6 @@ const App = () => {
                 if (sub && cls) {
                     const periods = Number(configMap.get(sub.trim().toLowerCase()) || 0);
                     const classCount = cls.split(',').filter(c => c.trim()).length;
-                    // Ensure arithmetic operands are of numeric types
                     total += (periods * classCount);
                 }
             });
@@ -105,21 +144,29 @@ const App = () => {
         setTimeout(() => setSyncStatus({ loading: false, message: '', type: '' }), 3000);
     };
 
-    // --- COMPONENT NHẬP LIỆU (Cô lập để fix lag) ---
-    const AddTeacherForm = ({ onAdd, subjects }: any) => {
+    // --- COMPONENT NHẬP LIỆU (Cô lập & Validation) ---
+    const AddTeacherForm = ({ onAdd, subjects, allTeachers }: any) => {
         const [name, setName] = useState('');
         const [sub, setSub] = useState('');
         const [cls, setCls] = useState('');
 
         const handleSubmit = () => {
             if (!name || !sub || !cls) return alert("Vui lòng điền đủ thông tin!");
-            const assignment = `${sub}: ${normalizeClassStr(cls)}`;
-            onAdd({ name, assignments: assignment });
+            
+            const proposed = `${sub}: ${normalizeClassStr(cls)}`;
+            const conflicts = findConflicts(proposed, allTeachers);
+
+            if (conflicts.length > 0) {
+                alert(`KHÔNG THỂ PHÂN CÔNG:\n\n${conflicts.join('\n')}\n\nVui lòng kiểm tra lại!`);
+                return;
+            }
+
+            onAdd({ name, assignments: proposed });
             setName(''); setSub(''); setCls('');
         };
 
         return (
-            <div className="mb-10 bg-blue-50 border-2 border-blue-100 p-8 rounded-[3rem] animate-fadeIn">
+            <div className="mb-10 bg-blue-50 border-2 border-blue-100 p-8 rounded-[3rem] animate-fadeIn shadow-inner">
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
                     <div className="space-y-2">
                         <label className="text-[10px] font-black text-blue-400 uppercase ml-2">Họ tên giáo viên</label>
@@ -140,7 +187,10 @@ const App = () => {
                         <input type="text" placeholder="6a1, 7a2, 8a3" className="w-full p-5 bg-white rounded-2xl border-none shadow-sm font-bold text-slate-700 outline-none focus:ring-2 focus:ring-blue-500" value={cls} onChange={e => setCls(e.target.value)}/>
                     </div>
                 </div>
-                <div className="flex justify-end">
+                <div className="flex justify-between items-center">
+                    <div className="text-[10px] font-bold text-blue-400/60 uppercase max-w-md italic leading-relaxed">
+                        Hệ thống tự động kiểm tra trùng lấn giữa giáo viên ngay khi bấm xác nhận.
+                    </div>
                     <button onClick={handleSubmit} className="bg-blue-600 text-white px-12 py-4 rounded-2xl font-black shadow-xl hover:bg-blue-700 active:scale-95 transition-all flex items-center gap-2">
                         <Plus size={20}/> XÁC NHẬN THÊM
                     </button>
@@ -177,14 +227,41 @@ const App = () => {
             reader.onload = (evt: any) => {
                 const wb = (window as any).XLSX.read(evt.target.result, {type:'binary'});
                 const rows = (window as any).XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
-                const news = rows.map((row: any, i: number) => ({
-                    id: (Date.now()+i).toString(),
-                    name: row['Họ tên'] || row['tengv'] || 'Giáo viên mới',
-                    assignments: row['Phân công (Môn: Lớp1, Lớp2)'] || row['Phân công lớp'] || '',
-                    roles: []
-                }));
-                updateData({ teachers: [...data.teachers, ...news] });
-                setSyncStatus({ loading: false, message: `Đã nhập ${news.length} GV`, type: 'success' });
+                
+                const errors: string[] = [];
+                const validTeachers: any[] = [];
+                let currentSystemTeachers = [...data.teachers];
+
+                rows.forEach((row: any, i: number) => {
+                    const name = row['Họ tên'] || row['tengv'] || row['họ tên'] || 'GV mới';
+                    const rawAssignments = row['Phân công (Môn: Lớp1, Lớp2)'] || row['Phân công lớp'] || row['phân công'] || '';
+                    
+                    // Kiểm tra xung đột cho từng dòng trong Excel
+                    const rowConflicts = findConflicts(rawAssignments, currentSystemTeachers);
+                    
+                    if (rowConflicts.length > 0) {
+                        errors.push(`Dòng ${i + 2} (${name}): ${rowConflicts.join(', ')}`);
+                    } else {
+                        const newGv = {
+                            id: (Date.now() + i).toString(),
+                            name: name,
+                            assignments: rawAssignments,
+                            roles: []
+                        };
+                        validTeachers.push(newGv);
+                        // Cập nhật tạm thời để các dòng sau trong Excel cũng không được trùng với dòng trước
+                        currentSystemTeachers.push(newGv);
+                    }
+                });
+
+                if (errors.length > 0) {
+                    alert(`LỖI KHI NHẬP FILE EXCEL:\n\nHệ thống phát hiện ${errors.length} lỗi trùng lấn:\n${errors.join('\n')}\n\nVui lòng sửa file Excel và nhập lại để đảm bảo dữ liệu chính xác!`);
+                    if (fileRef.current) fileRef.current.value = '';
+                    return;
+                }
+
+                updateData({ teachers: [...data.teachers, ...validTeachers] });
+                setSyncStatus({ loading: false, message: `Đã nhập ${validTeachers.length} GV`, type: 'success' });
                 setTimeout(() => setSyncStatus({ loading: false, message: '', type: '' }), 3000);
             };
             reader.readAsBinaryString(file);
@@ -196,7 +273,7 @@ const App = () => {
                     <div>
                         <h2 className="text-3xl font-black text-slate-800 tracking-tight">Danh sách Phân công</h2>
                         <div className="text-[10px] font-black text-blue-500 uppercase tracking-widest mt-2 flex items-center gap-2">
-                            <Hash size={14}/> Chuẩn hóa tên lớp tự động • Hiệu năng cao
+                            <Hash size={14}/> Bảo vệ dữ liệu • Tự động Validation • Zero Lag
                         </div>
                     </div>
                     <div className="flex flex-wrap gap-3">
@@ -213,7 +290,7 @@ const App = () => {
                     </div>
                 </div>
 
-                {isAdding && <AddTeacherForm onAdd={handleAdd} subjects={data.subjectConfigs} />}
+                {isAdding && <AddTeacherForm onAdd={handleAdd} subjects={data.subjectConfigs} allTeachers={data.teachers} />}
 
                 <div className="bg-white rounded-[3rem] border-2 border-slate-50 overflow-hidden shadow-sm">
                     <table className="w-full text-left">
@@ -243,7 +320,14 @@ const App = () => {
                                             })}
                                             <button onClick={() => {
                                                 const news = prompt("Chỉnh sửa phân công (Môn: Lớp1, Lớp2; ...)", t.assignments);
-                                                if (news !== null) updateData({ teachers: data.teachers.map((x: any) => x.id === t.id ? {...x, assignments: news} : x) });
+                                                if (news !== null) {
+                                                    const conflicts = findConflicts(news, data.teachers, t.id);
+                                                    if (conflicts.length > 0) {
+                                                        alert(`KHÔNG THỂ SỬA:\n\n${conflicts.join('\n')}`);
+                                                    } else {
+                                                        updateData({ teachers: data.teachers.map((x: any) => x.id === t.id ? {...x, assignments: news} : x) });
+                                                    }
+                                                }
                                             }} className="p-2 text-blue-400 hover:text-blue-600 opacity-0 group-hover:opacity-100 transition-all"><Edit3 size={16}/></button>
                                         </div>
                                     </td>
@@ -312,7 +396,7 @@ const App = () => {
         </div>
     );
 
-    // --- CÁC TAB BÁO CÁO & TIẾT DẠY (Tương tự bản trước nhưng Memoized) ---
+    // --- TAB TIẾT DẠY ---
     const WeeklyTab = () => {
         const [tempLogs, setTempLogs] = useState(data.weeklyData[currentWeek] || {});
         const save = () => {
@@ -453,7 +537,7 @@ const App = () => {
                     {syncStatus.loading ? <RefreshCw size={24} className="animate-spin text-blue-400" /> : <CheckCircle2 size={24} className="text-emerald-400" />}
                     {syncStatus.message}
                 </div>
-            )}
+            )}AC
         </div>
     );
 };
