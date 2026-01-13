@@ -10,8 +10,8 @@ import {
     AlertCircle, Info, Briefcase, Award
 } from 'lucide-react';
 
-// --- CẤU HÌNH HỆ THỐNG ---
-const STORAGE_KEY = 'thcs_mgmt_v4_final_perfect';
+// --- CẤU HÌNH HỆ THỐNG MẶC ĐỊNH ---
+const STORAGE_KEY = 'thcs_mgmt_v4_perfect_final';
 
 const DEFAULT_SUBJECT_CONFIGS = [
     { name: 'Toán', periods: 4 },
@@ -38,14 +38,15 @@ const DEFAULT_ROLES = [
     { id: 'r5', name: 'TPT Đội', reduction: 10 }
 ];
 
-// --- HÀM TRỢ GIÚP ---
+// --- HÀM TRỢ GIÚP CHUẨN HÓA & KIỂM TRA ---
 const validateClassFormat = (className: string) => {
     const cleanName = className.trim().toUpperCase();
     if (!cleanName) return null;
     const gradeMatch = cleanName.match(/^\d+/);
     if (!gradeMatch) return `Lớp "${cleanName}" thiếu số khối (6-9)`;
     const grade = parseInt(gradeMatch[0]);
-    if (grade < 6 || grade > 9) return `Lớp "${cleanName}" sai khối (Chỉ 6-9)`;
+    if (grade < 6 || grade > 9) return `Lớp "${cleanName}" sai khối (Chỉ nhập 6-9)`;
+    if (cleanName.length < 2) return `Tên lớp "${cleanName}" quá ngắn`;
     return null;
 };
 
@@ -60,12 +61,15 @@ const normalizeClassStr = (str: string) => {
 const findConflicts = (proposedAssignments: string, currentTeachers: any[], excludeTeacherId?: string) => {
     const conflicts: string[] = [];
     if (!proposedAssignments) return conflicts;
+
     const newParts = proposedAssignments.split(';');
     newParts.forEach(part => {
         const [subPart, clsPart] = part.split(':');
         if (!subPart || !clsPart) return;
+
         const subject = subPart.trim().toLowerCase();
         const inputClasses = clsPart.split(',').map(c => c.trim().toUpperCase().replace(/\s+/g, '')).filter(c => c);
+
         currentTeachers.forEach(teacher => {
             if (excludeTeacherId && teacher.id === excludeTeacherId) return;
             const existingParts = teacher.assignments.split(';');
@@ -84,6 +88,7 @@ const findConflicts = (proposedAssignments: string, currentTeachers: any[], excl
     return conflicts;
 };
 
+// --- COMPONENT CHÍNH ---
 const App = () => {
     const [activeTab, setActiveTab] = useState('teachers');
     const [syncStatus, setSyncStatus] = useState({ message: '', type: '' });
@@ -158,12 +163,15 @@ const App = () => {
             setErrors({ format: formatErrs, conflicts: conflictErrs });
         }, [sub, cls, allTeachers]);
 
-        const toggleRole = (rName: string) => {
-            setSelectedRoles(prev => prev.includes(rName) ? prev.filter(x => x !== rName) : [...prev, rName]);
+        const toggleRole = (roleName: string) => {
+            if (!roleName) return;
+            setSelectedRoles(prev => 
+                prev.includes(roleName) ? prev.filter(x => x !== roleName) : [...prev, roleName]
+            );
         };
 
         const handleSubmit = () => {
-            if (!name || !sub || !cls) return alert("Vui lòng nhập đầy đủ thông tin!");
+            if (!name || !sub || !cls) return alert("Vui lòng nhập đầy đủ thông tin GV!");
             if (errors.format.length > 0 || errors.conflicts.length > 0) return;
             const proposed = `${sub}: ${normalizeClassStr(cls)}`;
             onAdd({ id: Date.now().toString(), name, assignments: proposed, roles: selectedRoles });
@@ -173,52 +181,86 @@ const App = () => {
         const hasError = errors.format.length > 0 || errors.conflicts.length > 0;
 
         return (
-            <div className="mb-10 bg-blue-50/50 border-2 border-blue-100 p-8 rounded-[3rem] animate-fadeIn shadow-inner">
-                <div className="grid grid-cols-1 xl:grid-cols-4 gap-6 items-end">
+            <div className="mb-10 bg-blue-50/40 border-2 border-blue-100 p-8 rounded-[3.5rem] animate-fadeIn shadow-inner">
+                <div className="grid grid-cols-1 xl:grid-cols-5 gap-6 items-start">
+                    {/* HỌ TÊN */}
                     <div className="space-y-2">
-                        <label className="text-[10px] font-black text-blue-500 uppercase ml-2">Họ tên GV</label>
-                        <input type="text" placeholder="Nguyễn Văn A" className="w-full p-4 bg-white rounded-2xl border-none shadow-sm font-bold text-slate-700 outline-none focus:ring-2 focus:ring-blue-500" value={name} onChange={e => setName(e.target.value)}/>
+                        <label className="text-[10px] font-black text-blue-500 uppercase ml-2 tracking-widest">Họ tên GV</label>
+                        <input type="text" placeholder="Nguyễn Văn A" className="w-full p-4 bg-white rounded-2xl border-none shadow-sm font-bold text-slate-700 outline-none focus:ring-2 focus:ring-blue-500 transition-all" value={name} onChange={e => setName(e.target.value)}/>
                     </div>
+
+                    {/* MÔN HỌC */}
                     <div className="space-y-2">
-                        <label className="text-[10px] font-black text-blue-500 uppercase ml-2">Môn học</label>
-                        <select className="w-full p-4 bg-white rounded-2xl border-none shadow-sm font-bold text-slate-700 outline-none focus:ring-2 appearance-none" value={sub} onChange={e => setSub(e.target.value)}>
-                            <option value="">-- Chọn môn --</option>
-                            {subjects.map((s: any) => <option key={s.name} value={s.name}>{s.name}</option>)}
-                        </select>
+                        <label className="text-[10px] font-black text-blue-500 uppercase ml-2 tracking-widest">Môn chính</label>
+                        <div className="relative">
+                            <select className="w-full p-4 bg-white rounded-2xl border-none shadow-sm font-bold text-slate-700 outline-none focus:ring-2 appearance-none transition-all cursor-pointer" value={sub} onChange={e => setSub(e.target.value)}>
+                                <option value="">-- Chọn môn --</option>
+                                {subjects.map((s: any) => <option key={s.name} value={s.name}>{s.name}</option>)}
+                            </select>
+                            <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-300 pointer-events-none" size={16}/>
+                        </div>
                     </div>
+
+                    {/* LỚP DẠY */}
                     <div className="space-y-2">
-                        <label className="text-[10px] font-black text-blue-500 uppercase ml-2">Lớp dạy (vd: 6A1, 7B2)</label>
-                        <input type="text" placeholder="6A1, 7B2" className={`w-full p-4 bg-white rounded-2xl border-none shadow-sm font-bold text-slate-700 outline-none focus:ring-2 ${errors.format.length > 0 ? 'ring-2 ring-orange-400' : ''}`} value={cls} onChange={e => setCls(e.target.value)}/>
+                        <label className="text-[10px] font-black text-blue-500 uppercase ml-2 tracking-widest">Lớp (vd: 6A1, 7B2)</label>
+                        <input type="text" placeholder="6A1, 7B2" className={`w-full p-4 bg-white rounded-2xl border-none shadow-sm font-bold text-slate-700 outline-none focus:ring-2 ${errors.format.length > 0 ? 'ring-2 ring-orange-400' : ''} transition-all`} value={cls} onChange={e => setCls(e.target.value)}/>
                     </div>
+
+                    {/* KIÊM NHIỆM (Dropdown đồng bộ từ config) */}
                     <div className="space-y-2">
-                        <label className="text-[10px] font-black text-blue-500 uppercase ml-2">Kiêm nhiệm (Chọn để giảm tiết)</label>
-                        <div className="flex flex-wrap gap-1 bg-white p-2 rounded-2xl shadow-sm min-h-[56px] items-center">
-                            {rolesConfig.map((r: any) => (
-                                <button key={r.id} onClick={() => toggleRole(r.name)} className={`px-3 py-1.5 rounded-xl text-[9px] font-black border transition-all ${selectedRoles.includes(r.name) ? 'bg-blue-600 border-blue-600 text-white' : 'bg-slate-50 border-slate-100 text-slate-400 hover:border-blue-200'}`}>
-                                    {r.name}
-                                </button>
+                        <label className="text-[10px] font-black text-blue-500 uppercase ml-2 tracking-widest">Kiêm nhiệm</label>
+                        <div className="relative">
+                            <select 
+                                className="w-full p-4 bg-white rounded-2xl border-none shadow-sm font-bold text-slate-700 outline-none focus:ring-2 appearance-none transition-all cursor-pointer"
+                                value="" 
+                                onChange={e => toggleRole(e.target.value)}
+                            >
+                                <option value="">-- Chọn việc --</option>
+                                {rolesConfig.map((r: any) => (
+                                    <option key={r.id} value={r.name}>{r.name} (-{r.reduction} tiết)</option>
+                                ))}
+                            </select>
+                            <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-300 pointer-events-none" size={16}/>
+                        </div>
+                        {/* Tags list */}
+                        <div className="flex flex-wrap gap-1.5 mt-2">
+                            {selectedRoles.map(r => (
+                                <span key={r} className="bg-blue-600 text-white text-[9px] px-2.5 py-1 rounded-lg flex items-center gap-1.5 font-black shadow-sm">
+                                    {r} <X size={10} className="cursor-pointer hover:text-red-300" onClick={() => toggleRole(r)}/>
+                                </span>
                             ))}
                         </div>
                     </div>
+
+                    {/* NÚT XÁC NHẬN */}
+                    <div className="pt-6">
+                        <button onClick={handleSubmit} disabled={hasError} className={`w-full py-4 rounded-2xl font-black shadow-lg transition-all flex items-center justify-center gap-2 ${hasError ? 'bg-slate-300 text-slate-500 cursor-not-allowed' : 'bg-blue-600 text-white hover:bg-blue-700 active:scale-95'}`}>
+                            {hasError ? <X size={18}/> : <Plus size={18}/>} LƯU GV MỚI
+                        </button>
+                    </div>
                 </div>
 
+                {/* CẢNH BÁO VALIDATION */}
                 {(errors.format.length > 0 || errors.conflicts.length > 0) && (
-                    <div className="mt-4 flex flex-col gap-2">
-                        {errors.format.map((e, i) => <div key={i} className="text-[10px] font-black text-orange-600 bg-orange-50 px-4 py-2 rounded-lg flex items-center gap-2"><AlertTriangle size={14}/> {e.toUpperCase()}</div>)}
-                        {errors.conflicts.map((e, i) => <div key={i} className="text-[10px] font-black text-red-600 bg-red-50 px-4 py-2 rounded-lg flex items-center gap-2"><X size={14}/> BỊ TRÙNG: {e.toUpperCase()}</div>)}
+                    <div className="mt-6 flex flex-col gap-2 animate-fadeIn">
+                        {errors.format.map((e, i) => (
+                            <div key={i} className="text-[10px] font-bold text-orange-600 bg-orange-50 px-5 py-3 rounded-xl border border-orange-100 flex items-center gap-3">
+                                <AlertTriangle size={14}/> {e.toUpperCase()}
+                            </div>
+                        ))}
+                        {errors.conflicts.map((e, i) => (
+                            <div key={i} className="text-[10px] font-bold text-red-600 bg-red-50 px-5 py-3 rounded-xl border border-red-100 flex items-center gap-3">
+                                <AlertCircle size={14}/> PHÂN CÔNG BỊ TRÙNG: {e.toUpperCase()}
+                            </div>
+                        ))}
                     </div>
                 )}
-
-                <div className="mt-6 flex justify-end">
-                    <button onClick={handleSubmit} disabled={hasError} className={`px-12 py-4 rounded-2xl font-black shadow-lg transition-all flex items-center gap-2 ${hasError ? 'bg-slate-300 text-slate-500 cursor-not-allowed' : 'bg-blue-600 text-white hover:bg-blue-700'}`}>
-                        {hasError ? <X size={18}/> : <Plus size={18}/>} XÁC NHẬN PHÂN CÔNG
-                    </button>
-                </div>
             </div>
         );
     };
 
-    // --- TAB PHÂN CÔNG ---
+    // --- TAB QUẢN LÝ PHÂN CÔNG ---
     const TeacherTab = () => {
         const [isAdding, setIsAdding] = useState(false);
         const fileRef = useRef<HTMLInputElement>(null);
@@ -227,8 +269,8 @@ const App = () => {
             const templateData = [{ "Họ tên": "Nguyễn Văn A", "Phân công (Môn: Lớp1, Lớp2)": "Toán: 6A1, 6A2; Tin: 7A3", "Kiêm nhiệm": "Chủ nhiệm, Tổ trưởng" }];
             const ws = (window as any).XLSX.utils.json_to_sheet(templateData);
             const wb = (window as any).XLSX.utils.book_new();
-            (window as any).XLSX.utils.book_append_sheet(wb, ws, "Mau_Phan_Cong");
-            (window as any).XLSX.writeFile(wb, "Mau_THCS_Pro.xlsx");
+            (window as any).XLSX.utils.book_append_sheet(wb, ws, "Mau_THCS_Pro");
+            (window as any).XLSX.writeFile(wb, "Mau_Phan_Cong_THCS.xlsx");
         };
 
         const handleImport = (e: any) => {
@@ -239,24 +281,14 @@ const App = () => {
                 const wb = (window as any).XLSX.read(evt.target.result, {type:'binary'});
                 const rows = (window as any).XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
                 const validTeachers: any[] = [];
-                let currentContext = [...data.teachers];
-
                 rows.forEach((row: any, i: number) => {
-                    const name = row['Họ tên'] || row['GV'] || 'GV mới';
-                    const assignments = row['Phân công (Môn: Lớp1, Lớp2)'] || '';
-                    const rolesRaw = row['Kiêm nhiệm'] || '';
-                    
-                    const rowConflicts = findConflicts(assignments, currentContext);
-                    if (rowConflicts.length === 0) {
-                        const newGv = {
-                            id: (Date.now() + i).toString(),
-                            name,
-                            assignments,
-                            roles: rolesRaw.split(',').map((s: string) => s.trim()).filter((s: string) => s)
-                        };
-                        validTeachers.push(newGv);
-                        currentContext.push(newGv);
-                    }
+                    const rolesRaw = row['Kiêm nhiệm'] || row['chucvu'] || '';
+                    validTeachers.push({
+                        id: (Date.now() + i).toString(),
+                        name: row['Họ tên'] || row['GV'] || 'GV mới',
+                        assignments: row['Phân công (Môn: Lớp1, Lớp2)'] || '',
+                        roles: rolesRaw.split(',').map((s: string) => s.trim()).filter((s: string) => s)
+                    });
                 });
                 updateData({ teachers: [...data.teachers, ...validTeachers] });
                 setSyncStatus({ message: `Đã nhập ${validTeachers.length} GV`, type: 'success' });
@@ -267,20 +299,22 @@ const App = () => {
 
         return (
             <div className="p-8 animate-fadeIn">
-                <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-6 mb-10">
+                <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-6 mb-12">
                     <div>
-                        <h2 className="text-3xl font-black text-slate-800 tracking-tighter">Phân công & Kiêm nhiệm</h2>
-                        <div className="text-[10px] font-black text-blue-500 uppercase tracking-widest mt-2">Dữ liệu thông minh • Tự động giảm trừ định mức</div>
+                        <h2 className="text-4xl font-black text-slate-800 tracking-tighter">Phân công & Kiêm nhiệm</h2>
+                        <div className="text-[10px] font-black text-blue-500 uppercase tracking-widest mt-2 flex items-center gap-2">
+                           <ShieldCheck size={14}/> Hệ thống tự động tính dôi dư sau giảm trừ
+                        </div>
                     </div>
                     <div className="flex flex-wrap gap-3">
-                        <button onClick={() => setIsAdding(!isAdding)} className="bg-blue-600 text-white px-8 py-4 rounded-2xl flex items-center gap-3 font-bold shadow-xl hover:bg-blue-700 transition-all">
-                            <UserPlus size={20}/> {isAdding ? 'Đóng form' : 'Thêm GV'}
+                        <button onClick={() => setIsAdding(!isAdding)} className="bg-blue-600 text-white px-8 py-4 rounded-2xl flex items-center gap-2 font-bold shadow-xl hover:bg-blue-700 transition-all">
+                            <UserPlus size={20}/> {isAdding ? 'Đóng Form' : 'Thêm GV'}
                         </button>
-                        <button onClick={exportTemplate} className="bg-white border-2 border-slate-100 text-slate-600 px-6 py-4 rounded-2xl flex items-center gap-3 font-bold hover:bg-slate-50">
-                            <Download size={20} className="text-blue-500"/> Tải file mẫu
+                        <button onClick={exportTemplate} className="bg-white border-2 border-slate-100 text-slate-600 px-6 py-4 rounded-2xl flex items-center gap-2 font-bold hover:bg-slate-50 transition-all">
+                            <Download size={20} className="text-blue-500"/> File mẫu
                         </button>
                         <input type="file" ref={fileRef} className="hidden" onChange={handleImport} accept=".xlsx, .xls"/>
-                        <button onClick={() => fileRef.current?.click()} className="bg-emerald-600 text-white px-8 py-4 rounded-2xl flex items-center gap-3 font-bold shadow-xl hover:bg-emerald-700">
+                        <button onClick={() => fileRef.current?.click()} className="bg-emerald-600 text-white px-8 py-4 rounded-2xl flex items-center gap-2 font-bold shadow-xl hover:bg-emerald-700 transition-all">
                             <FileSpreadsheet size={20}/> Nhập Excel
                         </button>
                     </div>
@@ -288,7 +322,7 @@ const App = () => {
 
                 {isAdding && <AddTeacherForm onAdd={(gv: any) => { updateData({ teachers: [gv, ...data.teachers] }); setIsAdding(false); }} subjects={data.subjectConfigs} allTeachers={data.teachers} rolesConfig={data.roles} />}
 
-                <div className="bg-white rounded-[3rem] border-2 border-slate-50 overflow-hidden shadow-sm">
+                <div className="bg-white rounded-[3.5rem] border-2 border-slate-50 overflow-hidden shadow-sm">
                     <table className="w-full text-left">
                         <thead className="bg-slate-50 border-b">
                             <tr className="text-[10px] font-black uppercase text-slate-400">
@@ -322,19 +356,20 @@ const App = () => {
                                             </div>
                                         </td>
                                         <td className="p-8 text-right">
-                                            <button onClick={() => updateData({ teachers: data.teachers.filter((x: any) => x.id !== t.id) })} className="text-slate-200 hover:text-red-500 p-4 transition-all"><Trash2 size={24}/></button>
+                                            <button onClick={() => updateData({ teachers: data.teachers.filter((x: any) => x.id !== t.id) })} className="text-slate-200 hover:text-red-500 p-4 transition-all hover:bg-red-50 rounded-xl"><Trash2 size={24}/></button>
                                         </td>
                                     </tr>
                                 );
                             })}
                         </tbody>
                     </table>
+                    {data.teachers.length === 0 && <div className="p-20 text-center text-slate-300 font-black italic tracking-widest uppercase">Chưa có dữ liệu giáo viên</div>}
                 </div>
             </div>
         );
     };
 
-    // --- TAB BÁO CÁO (TÍNH TOÁN DÔI DƯ CHÍNH XÁC) ---
+    // --- TAB BÁO CÁO TỔNG HỢP ---
     const ReportTab = () => {
         const [weeks, setWeeks] = useState(4);
         const stats = useMemo(() => {
@@ -352,12 +387,12 @@ const App = () => {
             <div className="p-8 animate-fadeIn">
                 <div className="flex flex-col md:flex-row justify-between items-end mb-12 gap-8">
                     <div>
-                        <h2 className="text-3xl font-black text-slate-800 tracking-tighter mb-4">Quyết toán Tiết dạy & Dôi dư</h2>
-                        <p className="text-slate-400 font-bold uppercase text-[10px] tracking-widest flex items-center gap-2"><Award size={14} className="text-blue-500"/> Đã bao gồm giảm trừ kiêm nhiệm và định mức chuẩn {data.standardQuota} tiết</p>
+                        <h2 className="text-3xl font-black text-slate-800 tracking-tighter mb-4">Báo cáo Dôi dư Tổng hợp</h2>
+                        <p className="text-slate-400 font-bold uppercase text-[10px] tracking-widest flex items-center gap-2"><Award size={14} className="text-blue-500"/> Đã tính theo định mức {data.standardQuota} tiết và kiêm nhiệm</p>
                     </div>
-                    <div className="bg-slate-100 p-3 rounded-[2rem] flex items-center gap-4">
+                    <div className="bg-slate-100 p-3 rounded-[2rem] flex items-center gap-4 border border-slate-200 shadow-sm">
                         <span className="text-[10px] font-black text-slate-400 ml-4 uppercase">Thời gian:</span>
-                        <input type="number" value={weeks} onChange={e => setWeeks(parseInt(e.target.value) || 1)} className="w-16 p-3 bg-white rounded-xl text-center font-black text-blue-600 outline-none shadow-sm"/>
+                        <input type="number" value={weeks} onChange={e => setWeeks(parseInt(e.target.value) || 1)} className="w-16 p-3 bg-white rounded-xl text-center font-black text-blue-600 outline-none shadow-inner"/>
                         <span className="text-[10px] font-black text-slate-400 mr-4 uppercase">TUẦN</span>
                     </div>
                 </div>
@@ -367,11 +402,11 @@ const App = () => {
                         <thead className="bg-slate-50 border-b text-[10px] font-black uppercase text-slate-400">
                             <tr>
                                 <th className="p-8">Giáo viên</th>
-                                <th className="p-8 text-center">Giảm trừ/Tuần</th>
+                                <th className="p-8 text-center">Giảm/Tuần</th>
                                 <th className="p-8 text-center">Định mức/Tuần</th>
-                                <th className="p-8 text-center">Tổng định mức ({weeks}t)</th>
+                                <th className="p-8 text-center">Tổng định mức</th>
                                 <th className="p-8 text-center">Tổng thực dạy</th>
-                                <th className="p-8 text-center bg-blue-50/50">Dôi dư/Thiếu</th>
+                                <th className="p-8 text-center bg-blue-50/50">Dôi dư</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -382,7 +417,7 @@ const App = () => {
                                     <td className="p-8 text-center font-black text-slate-500">{s.actualQuotaPerWeek}</td>
                                     <td className="p-8 text-center font-black text-slate-300">{s.totalQuota.toFixed(1)}</td>
                                     <td className="p-8 text-center font-black text-2xl text-slate-800">{s.totalActual.toFixed(1)}</td>
-                                    <td className={`p-8 text-center text-3xl font-black ${s.balance >= 0 ? 'text-emerald-600 bg-emerald-50/30' : 'text-red-500 bg-red-50/30'}`}>
+                                    <td className={`p-8 text-center text-3xl font-black ${s.balance >= 0 ? 'text-emerald-600 bg-emerald-50/25' : 'text-red-500 bg-red-50/25'}`}>
                                         {s.balance > 0 ? `+${s.balance.toFixed(1)}` : s.balance.toFixed(1)}
                                     </td>
                                 </tr>
@@ -394,7 +429,7 @@ const App = () => {
         );
     };
 
-    // --- TAB TIẾT DẠY (NHẬP TUẦN) ---
+    // --- TAB TIẾT DẠY HÀNG TUẦN ---
     const WeeklyTab = () => {
         const [tempLogs, setTempLogs] = useState(data.weeklyData[currentWeek] || {});
         return (
@@ -429,7 +464,7 @@ const App = () => {
     // --- TAB CẤU HÌNH ---
     const ConfigTab = () => (
         <div className="p-8 animate-fadeIn">
-            <h2 className="text-3xl font-black mb-10 text-slate-800 tracking-tighter">Cấu hình Cơ bản</h2>
+            <h2 className="text-3xl font-black mb-10 text-slate-800 tracking-tighter">Cấu hình Hệ thống</h2>
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
                 <div className="space-y-10">
                     <div className="bg-white p-10 rounded-[3.5rem] border-2 border-slate-100 shadow-sm">
@@ -444,7 +479,7 @@ const App = () => {
                                     <span className="font-black text-slate-600 uppercase text-[11px]">{r.name}</span>
                                     <div className="flex items-center gap-4">
                                         <span className="text-[10px] font-black text-slate-300">GIẢM</span>
-                                        <input type="number" className="w-16 p-2 bg-slate-50 rounded-xl text-center font-black text-blue-600" value={r.reduction} onChange={e => {
+                                        <input type="number" className="w-16 p-2 bg-slate-50 rounded-xl text-center font-black text-blue-600 outline-none focus:ring-2 focus:ring-blue-100" value={r.reduction} onChange={e => {
                                             const nr = [...data.roles]; nr[i].reduction = parseFloat(e.target.value); updateData({roles: nr});
                                         }}/>
                                         <button onClick={() => updateData({roles: data.roles.filter((x: any) => x.id !== r.id)})} className="text-slate-200 hover:text-red-400"><X size={16}/></button>
@@ -461,7 +496,7 @@ const App = () => {
                        {data.subjectConfigs.map((s: any, i: number) => (
                            <div key={i} className="flex justify-between items-center py-4 border-b border-slate-50 group hover:bg-slate-50 rounded-2xl px-4 transition-all">
                                <span className="font-black text-slate-600 uppercase text-[11px]">{s.name}</span>
-                               <input type="number" step="0.5" className="w-20 p-3 bg-slate-100 rounded-xl text-center font-black text-blue-600 outline-none" value={s.periods} onChange={e => {
+                               <input type="number" step="0.5" className="w-20 p-3 bg-slate-100 rounded-xl text-center font-black text-blue-600 outline-none focus:ring-2 focus:ring-blue-100" value={s.periods} onChange={e => {
                                    const nc = [...data.subjectConfigs]; nc[i].periods = parseFloat(e.target.value); updateData({subjectConfigs: nc});
                                }}/>
                            </div>
@@ -478,7 +513,7 @@ const App = () => {
                 <div className="container mx-auto flex flex-col md:flex-row justify-between items-center gap-8">
                     <div className="flex items-center gap-5">
                         <div className="bg-blue-600 p-4 rounded-[1.5rem] text-white shadow-2xl rotate-3"><LayoutDashboard size={32}/></div>
-                        <h1 className="font-black text-3xl tracking-tighter text-slate-800 uppercase">THCS PRO <span className="text-blue-600 text-sm align-top italic">v4.3</span></h1>
+                        <h1 className="font-black text-3xl tracking-tighter text-slate-800 uppercase">THCS PRO <span className="text-blue-600 text-sm align-top italic">v4.5</span></h1>
                     </div>
                     <nav className="flex gap-2 bg-slate-100 p-2 rounded-[2.5rem] overflow-x-auto no-scrollbar max-w-full">
                         {[
