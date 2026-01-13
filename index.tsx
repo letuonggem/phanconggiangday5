@@ -7,11 +7,11 @@ import {
     Plus, FileSpreadsheet, UserPlus, Book, ChevronDown,
     AlertCircle, Briefcase, CopyCheck, Square, CheckSquare,
     CheckCircle2, AlertTriangle, Download, FileUp, Edit3, Check,
-    Info, PlusCircle, Calculator
+    Info, PlusCircle, Calculator, Copy, RefreshCcw
 } from 'lucide-react';
 
 // --- CẤU HÌNH HỆ THỐNG ---
-const STORAGE_KEY = 'thcs_teaching_mgmt_v5_6_final';
+const STORAGE_KEY = 'thcs_teaching_mgmt_v6_pro_snapshots';
 
 const DEFAULT_SUBJECT_CONFIGS = [
     { name: 'Toán', periods: 4 }, { name: 'Ngữ văn', periods: 4 },
@@ -45,6 +45,7 @@ const App = () => {
     const [syncStatus, setSyncStatus] = useState({ message: '', type: '' });
     const [currentWeek, setCurrentWeek] = useState(1);
 
+    // KIẾN TRÚC MỚI: weeklyRecords[week] chứa snapshot toàn bộ dữ liệu của tuần đó
     const [data, setData] = useState(() => {
         const saved = localStorage.getItem(STORAGE_KEY);
         if (saved) return JSON.parse(saved);
@@ -52,9 +53,7 @@ const App = () => {
             standardQuota: 19, 
             roles: DEFAULT_ROLES,
             subjectConfigs: DEFAULT_SUBJECT_CONFIGS,
-            teachers: [], 
-            weeklyAssignments: {}, 
-            weeklyData: {} // Cấu trúc mới: { [week]: { [teacherId]: { actual: number, extra: number } } }
+            weeklyRecords: {} // { [week]: { teachers: [], assignments: {}, logs: {} } }
         };
     });
 
@@ -63,6 +62,19 @@ const App = () => {
     }, [data]);
 
     const updateData = (newData: any) => setData((prev: any) => ({ ...prev, ...newData }));
+
+    const getWeekData = (week: number) => {
+        return data.weeklyRecords[week] || { teachers: [], assignments: {}, logs: {} };
+    };
+
+    const updateWeekData = (week: number, weekContent: any) => {
+        updateData({
+            weeklyRecords: {
+                ...data.weeklyRecords,
+                [week]: { ...getWeekData(week), ...weekContent }
+            }
+        });
+    };
 
     const getTKBPeriods = useMemo(() => {
         const configMap = new Map<string, number>(
@@ -158,23 +170,15 @@ const App = () => {
         );
     };
 
-    // --- TAB PHÂN CÔNG ---
+    // --- TAB PHÂN CÔNG (LÀM VIỆC THEO TUẦN) ---
     const TeacherTab = () => {
         const [isAdding, setIsAdding] = useState(false);
-        const [selectedIds, setSelectedIds] = useState<string[]>([]);
         const [editingId, setEditingId] = useState<string | null>(null);
         const [editState, setEditState] = useState<{name: string, roles: string[]}>({ name: '', roles: [] });
         const fileRef = useRef<HTMLInputElement>(null);
-        const currentAssignments = data.weeklyAssignments[currentWeek] || {};
-
-        const toggleSelectAll = () => {
-            if (selectedIds.length === data.teachers.length) setSelectedIds([]);
-            else setSelectedIds(data.teachers.map((t: any) => t.id));
-        };
-
-        const toggleSelect = (id: string) => {
-            setSelectedIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
-        };
+        
+        const weekData = getWeekData(currentWeek);
+        const { teachers, assignments } = weekData;
 
         const startEditing = (teacher: any) => {
             setEditingId(teacher.id);
@@ -183,12 +187,12 @@ const App = () => {
 
         const saveEdit = () => {
             if (!editState.name.trim()) return alert("Họ tên không được để trống!");
-            const newTeachers = data.teachers.map((t: any) => 
+            const newTeachers = teachers.map((t: any) => 
                 t.id === editingId ? { ...t, name: editState.name, roles: editState.roles } : t
             );
-            updateData({ teachers: newTeachers });
+            updateWeekData(currentWeek, { teachers: newTeachers });
             setEditingId(null);
-            setSyncStatus({ message: 'Đã cập nhật thông tin thành công', type: 'success' });
+            setSyncStatus({ message: 'Đã cập nhật GV tại tuần ' + currentWeek, type: 'success' });
             setTimeout(() => setSyncStatus({ message: '', type: '' }), 2000);
         };
 
@@ -199,44 +203,28 @@ const App = () => {
             }));
         };
 
-        const copySelective = () => {
-            if (currentWeek <= 1) return alert("Không có dữ liệu tuần trước!");
-            const prev = data.weeklyAssignments[currentWeek - 1];
-            if (!prev) return alert("Dữ liệu tuần trước trống!");
-            const newCurrent = { ...currentAssignments };
-            selectedIds.forEach(id => { if (prev[id]) newCurrent[id] = prev[id]; });
-            updateData({ weeklyAssignments: { ...data.weeklyAssignments, [currentWeek]: newCurrent } });
-            setSyncStatus({ message: `Đã sao chép phân công cho ${selectedIds.length} giáo viên`, type: 'success' });
-            setTimeout(() => setSyncStatus({ message: '', type: '' }), 3000);
-            setSelectedIds([]); 
+        const copyFromPrevious = () => {
+            if (currentWeek <= 1) return alert("Đây là tuần đầu tiên!");
+            const prev = data.weeklyRecords[currentWeek - 1];
+            if (!prev || !prev.teachers.length) return alert("Tuần trước chưa có dữ liệu!");
+            
+            if(confirm(`Bạn muốn sao chép toàn bộ danh sách GV và phân công của Tuần ${currentWeek-1} sang Tuần ${currentWeek}? (Dữ liệu hiện tại của Tuần ${currentWeek} sẽ bị ghi đè)`)) {
+                updateWeekData(currentWeek, { 
+                    teachers: JSON.parse(JSON.stringify(prev.teachers)), 
+                    assignments: JSON.parse(JSON.stringify(prev.assignments)) 
+                });
+                setSyncStatus({ message: `Đã sao chép dữ liệu từ Tuần ${currentWeek - 1}`, type: 'success' });
+                setTimeout(() => setSyncStatus({ message: '', type: '' }), 3000);
+            }
         };
 
-        const handleImport = (e: any) => {
-            const file = e.target.files[0];
-            if (!file) return;
-            const reader = new FileReader();
-            reader.onload = (evt: any) => {
-                // @ts-ignore
-                const wb = XLSX.read(evt.target.result, {type:'binary'});
-                // @ts-ignore
-                const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
-                const newTeachers = [...data.teachers];
-                const newWeekAssignments = { ...currentAssignments };
-                rows.forEach((row: any, i: number) => {
-                    const name = row['Họ tên'] || row['GV'] || 'GV Mới';
-                    const assignments = row['Phân công (Môn: Lớp1, Lớp2)'] || '';
-                    const rolesRaw = row['Kiêm nhiệm'] || '';
-                    let teacher = newTeachers.find(t => t.name.toLowerCase() === name.toLowerCase());
-                    if (!teacher) {
-                        teacher = { id: (Date.now() + i).toString(), name, roles: rolesRaw.toString().split(',').map((s: string) => s.trim()).filter((s: string) => s) };
-                        newTeachers.push(teacher);
-                    }
-                    newWeekAssignments[teacher.id] = assignments;
-                });
-                updateData({ teachers: newTeachers, weeklyAssignments: { ...data.weeklyAssignments, [currentWeek]: newWeekAssignments } });
-                setSyncStatus({ message: `Đã nạp dữ liệu Excel thành công`, type: 'success' });
-            };
-            reader.readAsBinaryString(file);
+        const deleteTeacher = (id: string) => {
+            if(confirm("Bạn có chắc chắn muốn xóa GV này KHỎI TUẦN " + currentWeek + "? (Các tuần khác sẽ không bị ảnh hưởng)")) {
+                const newTeachers = teachers.filter((t: any) => t.id !== id);
+                const newAssignments = { ...assignments };
+                delete newAssignments[id];
+                updateWeekData(currentWeek, { teachers: newTeachers, assignments: newAssignments });
+            }
         };
 
         return (
@@ -251,56 +239,39 @@ const App = () => {
                         <button onClick={() => setCurrentWeek(currentWeek+1)} className="p-4 hover:bg-slate-100 rounded-2xl transition-colors"><ChevronRight/></button>
                     </div>
                     <div className="flex flex-wrap gap-3">
-                        <input type="file" ref={fileRef} className="hidden" onChange={handleImport} accept=".xlsx, .xls, .csv"/>
-                        <button onClick={() => fileRef.current?.click()} className="bg-emerald-600 text-white px-6 py-4 rounded-2xl flex items-center gap-2 font-bold shadow-lg hover:bg-emerald-700 transition-all"><FileUp size={20}/> Nhập Excel</button>
+                        {currentWeek > 1 && (
+                            <button onClick={copyFromPrevious} className="bg-indigo-50 text-indigo-600 px-6 py-4 rounded-2xl flex items-center gap-2 font-bold border border-indigo-100 hover:bg-indigo-100 transition-all shadow-sm"><Copy size={20}/> Sao chép Tuần {currentWeek-1}</button>
+                        )}
                         <button onClick={() => setIsAdding(!isAdding)} className="bg-blue-600 text-white px-6 py-4 rounded-2xl flex items-center gap-2 font-bold shadow-xl hover:bg-blue-700 transition-all">{isAdding ? 'Đóng Form' : 'Thêm giáo viên'}</button>
                     </div>
                 </div>
 
                 {isAdding && (
                     <AddTeacherForm onAdd={(teacher: any, assignment: string) => {
-                        updateData({ 
-                            teachers: [teacher, ...data.teachers],
-                            weeklyAssignments: { ...data.weeklyAssignments, [currentWeek]: { ...currentAssignments, [teacher.id]: assignment } }
+                        updateWeekData(currentWeek, { 
+                            teachers: [teacher, ...teachers],
+                            assignments: { ...assignments, [teacher.id]: assignment } 
                         });
                         setIsAdding(false);
                     }}/>
                 )}
 
                 <div className="bg-white rounded-[3.5rem] border-2 border-slate-50 overflow-hidden shadow-sm">
-                    <div className="p-6 bg-slate-50 border-b flex items-center justify-between">
-                        <div className="flex items-center gap-4">
-                            <button onClick={toggleSelectAll} className="flex items-center gap-2 text-[10px] font-black uppercase text-slate-400 hover:text-blue-600 transition-colors">
-                                {selectedIds.length === data.teachers.length && data.teachers.length > 0 ? <CheckSquare size={20} className="text-blue-600"/> : <Square size={20}/>}
-                                Chọn tất cả
-                            </button>
-                            {selectedIds.length > 0 && (
-                                <button onClick={copySelective} className="bg-emerald-50 text-emerald-600 px-6 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center gap-2 border border-emerald-100 animate-fadeIn"><CopyCheck size={16}/> Sao chép tuần trước ({selectedIds.length})</button>
-                            )}
-                        </div>
-                    </div>
                     <table className="w-full text-left">
                         <thead className="bg-slate-50 border-b text-[10px] font-black uppercase text-slate-400">
                             <tr>
-                                <th className="p-8 w-16"></th>
                                 <th className="p-8">Giáo viên & Chức vụ</th>
-                                <th className="p-8">Phân công TKB (Tuần {currentWeek})</th>
+                                <th className="p-8">Phân công TKB (Riêng tuần {currentWeek})</th>
                                 <th className="p-8 text-center">Tiết</th>
                                 <th className="p-8">Thao tác</th>
                             </tr>
                         </thead>
                         <tbody>
-                            {data.teachers.map((t: any) => {
-                                const assignment = currentAssignments[t.id] || "";
-                                const isSelected = selectedIds.includes(t.id);
+                            {teachers.map((t: any) => {
+                                const assignment = assignments[t.id] || "";
                                 const isEditing = editingId === t.id;
                                 return (
-                                    <tr key={t.id} className={`border-b transition-all ${isSelected ? 'bg-blue-50/40' : 'hover:bg-slate-50/50'}`}>
-                                        <td className="p-8 text-center">
-                                            <button onClick={() => toggleSelect(t.id)} className="text-slate-300 hover:text-blue-500">
-                                                {isSelected ? <CheckSquare size={24} className="text-blue-600"/> : <Square size={24}/>}
-                                            </button>
-                                        </td>
+                                    <tr key={t.id} className="border-b hover:bg-slate-50/50 transition-all">
                                         <td className="p-8">
                                             {isEditing ? (
                                                 <div className="space-y-2">
@@ -319,7 +290,10 @@ const App = () => {
                                             )}
                                         </td>
                                         <td className="p-8">
-                                            <input type="text" className="w-full p-4 bg-white/50 rounded-2xl border-none font-bold text-slate-600 focus:ring-2 shadow-inner" value={assignment} onChange={e => updateData({ weeklyAssignments: { ...data.weeklyAssignments, [currentWeek]: { ...currentAssignments, [t.id]: e.target.value } } })}/>
+                                            <input type="text" className="w-full p-4 bg-white/50 rounded-2xl border-none font-bold text-slate-600 focus:ring-2 shadow-inner" value={assignment} onChange={e => {
+                                                const newAssignments = { ...assignments, [t.id]: e.target.value };
+                                                updateWeekData(currentWeek, { assignments: newAssignments });
+                                            }}/>
                                         </td>
                                         <td className="p-8 text-center font-black text-slate-800 text-2xl">{getTKBPeriods(assignment)}</td>
                                         <td className="p-8 text-right">
@@ -329,7 +303,7 @@ const App = () => {
                                                 ) : (
                                                     <>
                                                         <button onClick={() => startEditing(t)} className="text-slate-200 hover:text-blue-500 p-2"><Edit3 size={20}/></button>
-                                                        <button onClick={() => updateData({ teachers: data.teachers.filter((x: any) => x.id !== t.id) })} className="text-slate-200 hover:text-red-500 p-2"><Trash2 size={20}/></button>
+                                                        <button onClick={() => deleteTeacher(t.id)} className="text-slate-200 hover:text-red-500 p-2"><Trash2 size={20}/></button>
                                                     </>
                                                 )}
                                             </div>
@@ -339,36 +313,38 @@ const App = () => {
                             })}
                         </tbody>
                     </table>
+                    {teachers.length === 0 && (
+                        <div className="p-20 text-center">
+                            <RefreshCcw size={48} className="mx-auto text-slate-200 mb-4 animate-spin-slow" />
+                            <p className="font-bold text-slate-400 uppercase tracking-widest text-sm italic">Tuần này chưa có danh sách giáo viên.<br/>Hãy thêm mới hoặc sao chép từ tuần trước.</p>
+                        </div>
+                    )}
                 </div>
             </div>
         );
     };
 
-    // --- TAB THỰC DẠY (GHI NHẬN BIẾN ĐỘNG) ---
+    // --- TAB THỰC DẠY ---
     const WeeklyTab = () => {
+        const weekData = getWeekData(currentWeek);
+        const { teachers, assignments, logs = {} } = weekData;
         const [tempLogs, setTempLogs] = useState<Record<string, {actual: number, extra: number}>>({});
 
         useEffect(() => {
-            const recorded = data.weeklyData[currentWeek] || {};
-            const assignments = data.weeklyAssignments[currentWeek] || {};
             const initial: Record<string, {actual: number, extra: number}> = {};
-            
-            data.teachers.forEach((t: any) => {
+            teachers.forEach((t: any) => {
                 const tkb = getTKBPeriods(assignments[t.id] || "");
-                if (recorded[t.id]) {
-                    initial[t.id] = { 
-                        actual: recorded[t.id].actual ?? tkb, 
-                        extra: recorded[t.id].extra ?? 0 
-                    };
+                if (logs[t.id]) {
+                    initial[t.id] = { actual: logs[t.id].actual ?? tkb, extra: logs[t.id].extra ?? 0 };
                 } else {
                     initial[t.id] = { actual: tkb, extra: 0 };
                 }
             });
             setTempLogs(initial);
-        }, [currentWeek, data.weeklyData, data.weeklyAssignments, data.teachers]);
+        }, [currentWeek, teachers, assignments, logs]);
 
         const handleSave = () => {
-            updateData({ weeklyData: { ...data.weeklyData, [currentWeek]: tempLogs } });
+            updateWeekData(currentWeek, { logs: tempLogs });
             setSyncStatus({ message: `Đã lưu thực dạy tuần ${currentWeek}`, type: 'success' });
             setTimeout(() => setSyncStatus({ message: '', type: '' }), 2000);
         };
@@ -384,7 +360,7 @@ const App = () => {
                         </div>
                         <button onClick={() => setCurrentWeek(currentWeek+1)} className="p-4 hover:bg-slate-100 rounded-2xl transition-colors"><ChevronRight/></button>
                     </div>
-                    <button onClick={handleSave} className="bg-blue-600 text-white px-12 py-5 rounded-[2rem] font-black shadow-xl hover:bg-blue-700 transition-all uppercase flex items-center gap-3">
+                    <button onClick={handleSave} disabled={teachers.length === 0} className="bg-blue-600 text-white px-12 py-5 rounded-[2rem] font-black shadow-xl hover:bg-blue-700 transition-all uppercase flex items-center gap-3 disabled:opacity-30">
                         <Calculator size={20}/> CHỐT TIẾT TUẦN
                     </button>
                 </div>
@@ -400,7 +376,7 @@ const App = () => {
                             </tr>
                         </thead>
                         <tbody>
-                            {data.teachers.map((t: any) => {
+                            {teachers.map((t: any) => {
                                 const log = tempLogs[t.id] || { actual: 0, extra: 0 };
                                 const total = log.actual + log.extra;
                                 return (
@@ -408,7 +384,7 @@ const App = () => {
                                         <td className="p-10">
                                             <div className="font-black text-slate-700 text-2xl">{t.name}</div>
                                             <div className="text-[10px] font-bold text-slate-300 uppercase mt-1">
-                                                Gốc TKB: {getTKBPeriods(data.weeklyAssignments[currentWeek]?.[t.id] || "")}t
+                                                Gốc TKB: {getTKBPeriods(assignments[t.id] || "")}t
                                             </div>
                                         </td>
                                         <td className="p-10">
@@ -446,60 +422,76 @@ const App = () => {
                             })}
                         </tbody>
                     </table>
+                    {teachers.length === 0 && (
+                        <div className="p-32 text-center text-slate-300 font-black uppercase text-sm italic tracking-widest">Dữ liệu phân công đang trống</div>
+                    )}
                 </div>
             </div>
         );
     };
 
-    // --- TAB BÁO CÁO (LŨY KẾ THÔNG MINH) ---
+    // --- TAB BÁO CÁO (TÍNH TOÁN THEO SNAPSHOT TỪNG TUẦN) ---
     const ReportTab = () => {
         const [weeks, setWeeks] = useState(4);
         
         const stats = useMemo(() => {
-            return data.teachers.map((t: any) => {
-                const reduction = getTeacherReduction(t.roles);
-                const actualQuotaPerWeek = Math.max(0, data.standardQuota - reduction);
+            // Lấy danh sách GV duy nhất từ tất cả các tuần để hiển thị báo cáo tổng
+            const allTeacherIds = new Set<string>();
+            for (let i = 1; i <= weeks; i++) {
+                const w = data.weeklyRecords[i];
+                if (w) w.teachers.forEach((t: any) => allTeacherIds.add(t.id));
+            }
+
+            return Array.from(allTeacherIds).map(id => {
                 let totalQuota = 0;
                 let totalActual = 0;
                 let totalExtra = 0;
+                let teacherName = "N/A";
+                let latestQuotaPerWeek = 0;
 
                 for (let i = 1; i <= weeks; i++) {
-                    totalQuota += actualQuotaPerWeek;
-                    const weekEntry = data.weeklyData[i]?.[t.id];
-                    
-                    if (weekEntry) {
-                        // Nếu đã ghi nhận tuần đó: Lấy con số cụ thể
-                        totalActual += (weekEntry.actual || 0);
-                        totalExtra += (weekEntry.extra || 0);
-                    } else {
-                        // Nếu chưa ghi nhận: Tự động tính theo TKB của tuần đó
-                        const planned = getTKBPeriods(data.weeklyAssignments[i]?.[t.id] || "");
-                        totalActual += planned;
+                    const w = data.weeklyRecords[i];
+                    if (w) {
+                        const tInWeek = w.teachers.find((tx: any) => tx.id === id);
+                        if (tInWeek) {
+                            teacherName = tInWeek.name;
+                            const reduction = getTeacherReduction(tInWeek.roles);
+                            const q = Math.max(0, data.standardQuota - reduction);
+                            latestQuotaPerWeek = q;
+                            totalQuota += q;
+
+                            const logs = w.logs || {};
+                            if (logs[id]) {
+                                totalActual += (logs[id].actual || 0);
+                                totalExtra += (logs[id].extra || 0);
+                            } else {
+                                // Nếu chưa ghi nhận thực dạy, lấy phân công tuần đó
+                                totalActual += getTKBPeriods(w.assignments[id] || "");
+                            }
+                        }
                     }
                 }
                 const totalTeaching = totalActual + totalExtra;
                 return { 
-                    name: t.name, 
-                    actualQuotaPerWeek, 
+                    name: teacherName, 
+                    latestQuotaPerWeek,
                     totalQuota, 
                     totalActual, 
                     totalExtra, 
                     totalTeaching,
                     balance: totalTeaching - totalQuota 
                 };
-            });
+            }).filter(s => s.name !== "N/A");
         }, [data, weeks]);
 
         return (
             <div className="p-8 animate-fadeIn">
                 <div className="flex justify-between items-end mb-12">
                     <div>
-                        <h2 className="text-3xl font-black text-slate-800 tracking-tighter mb-2 uppercase">Quyết toán Tiết dạy & Dôi dư</h2>
-                        <div className="flex items-center gap-4">
-                            <p className="text-slate-400 font-bold uppercase text-[10px] tracking-widest flex items-center gap-2">
-                                <Info size={14} className="text-blue-500"/> Dữ liệu lũy kế từ tuần 1 đến tuần {weeks}
-                            </p>
-                        </div>
+                        <h2 className="text-3xl font-black text-slate-800 tracking-tighter mb-2 uppercase">Báo cáo Quyết toán Tuần 1 - {weeks}</h2>
+                        <p className="text-slate-400 font-bold uppercase text-[10px] tracking-widest flex items-center gap-2">
+                            <Info size={14} className="text-blue-500"/> Dữ liệu được tính độc lập theo snapshot của mỗi tuần.
+                        </p>
                     </div>
                     <div className="bg-slate-100 p-3 rounded-[2rem] flex items-center gap-4 shadow-sm border border-slate-200">
                         <span className="text-[10px] font-black text-slate-400 ml-4 uppercase">Xem đến tuần:</span>
@@ -512,7 +504,7 @@ const App = () => {
                         <thead className="bg-slate-50 border-b text-[10px] font-black uppercase text-slate-400">
                             <tr>
                                 <th className="p-8">Giáo viên</th>
-                                <th className="p-8 text-center">Định mức ({weeks}t)</th>
+                                <th className="p-8 text-center">Tổng Định mức</th>
                                 <th className="p-8 text-center">Tổng Thực dạy</th>
                                 <th className="p-8 text-center text-orange-600">Tổng Bù/Tăng</th>
                                 <th className="p-8 text-center text-blue-600 bg-blue-50/30">Tổng Lũy kế</th>
@@ -524,7 +516,7 @@ const App = () => {
                                 <tr key={i} className="border-b hover:bg-slate-50/50 transition-all">
                                     <td className="p-8">
                                         <div className="font-black text-slate-700 text-xl">{s.name}</div>
-                                        <div className="text-[9px] font-bold text-slate-300 uppercase tracking-tighter">Định mức: {s.actualQuotaPerWeek}t/tuần</div>
+                                        <div className="text-[9px] font-bold text-slate-300 uppercase tracking-tighter">QM: {s.latestQuotaPerWeek}t/tuần</div>
                                     </td>
                                     <td className="p-8 text-center font-black text-slate-400">{s.totalQuota.toFixed(1)}</td>
                                     <td className="p-8 text-center font-black text-slate-800 text-xl">{s.totalActual.toFixed(1)}</td>
@@ -545,7 +537,7 @@ const App = () => {
     // --- TAB CẤU HÌNH ---
     const ConfigTab = () => (
         <div className="p-8 animate-fadeIn">
-            <h2 className="text-3xl font-black mb-10 text-slate-800 tracking-tighter uppercase">Cấu hình Cơ bản</h2>
+            <h2 className="text-3xl font-black mb-10 text-slate-800 tracking-tighter uppercase">Cài đặt Định mức Master</h2>
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
                 <div className="space-y-10">
                     <div className="bg-white p-10 rounded-[3.5rem] border-2 border-slate-100 shadow-sm">
@@ -576,7 +568,7 @@ const App = () => {
                 <div className="container mx-auto flex flex-col md:flex-row justify-between items-center gap-8">
                     <div className="flex items-center gap-5">
                         <div className="bg-blue-600 p-4 rounded-[1.5rem] text-white shadow-2xl rotate-3"><LayoutDashboard size={32}/></div>
-                        <h1 className="font-black text-3xl tracking-tighter text-slate-800 uppercase italic">THCS PRO <span className="text-blue-600 text-sm align-top italic font-black">v5.6</span></h1>
+                        <h1 className="font-black text-3xl tracking-tighter text-slate-800 uppercase italic">THCS PRO <span className="text-blue-600 text-sm align-top italic font-black">v6.0</span></h1>
                     </div>
                     <nav className="flex gap-2 bg-slate-100 p-2 rounded-[2.5rem] overflow-x-auto no-scrollbar max-w-full">
                         {[
