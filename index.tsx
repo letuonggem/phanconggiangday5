@@ -11,7 +11,7 @@ import {
 } from 'lucide-react';
 
 // --- CẤU HÌNH HỆ THỐNG ---
-const STORAGE_KEY = 'thcs_teaching_mgmt_v6_2_final';
+const STORAGE_KEY = 'thcs_teaching_mgmt_v6_4_final';
 
 const DEFAULT_SUBJECT_CONFIGS = [
     { name: 'Toán', periods: 4 }, { name: 'Ngữ văn', periods: 4 },
@@ -221,7 +221,7 @@ const App = () => {
                     <div className="flex items-center gap-6 bg-white border-2 border-slate-100 p-4 rounded-[2.5rem] shadow-sm">
                         <button onClick={() => setCurrentWeek(Math.max(1, currentWeek-1))} className="p-4 hover:bg-slate-100 rounded-2xl transition-colors"><ChevronLeft/></button>
                         <div className="px-10 text-center">
-                            <div className="text-[10px] font-black text-blue-500 uppercase tracking-widest mb-1">DỮ LIỆU TUẦN</div>
+                            <div className="text-[10px] font-black text-blue-500 uppercase tracking-widest mb-1">PHÂN CÔNG TUẦN</div>
                             <div className="text-4xl font-black tracking-tighter">{currentWeek}</div>
                         </div>
                         <button onClick={() => setCurrentWeek(currentWeek+1)} className="p-4 hover:bg-slate-100 rounded-2xl transition-colors"><ChevronRight/></button>
@@ -242,24 +242,24 @@ const App = () => {
                         <div className="grid grid-cols-1 xl:grid-cols-5 gap-6 items-start">
                             <div className="space-y-1">
                                 <label className="text-[10px] font-black text-blue-500 uppercase ml-2 tracking-widest">Họ tên GV</label>
-                                <input type="text" placeholder="Nguyễn Văn A" className="w-full p-4 rounded-2xl border-none shadow-sm font-bold" id="new-name"/>
+                                <input type="text" placeholder="Nguyễn Văn A" className="w-full p-4 rounded-2xl border-none shadow-sm font-bold focus:ring-2 focus:ring-blue-500" id="new-name"/>
                             </div>
                             <div className="space-y-1">
-                                <label className="text-[10px] font-black text-blue-500 uppercase ml-2 tracking-widest">Môn chính</label>
-                                <select className="w-full p-4 rounded-2xl border-none shadow-sm font-bold appearance-none" id="new-sub">
-                                    <option value="">Môn dạy</option>
+                                <label className="text-[10px] font-black text-blue-500 uppercase ml-2 tracking-widest">Môn dạy</label>
+                                <select className="w-full p-4 rounded-2xl border-none shadow-sm font-bold appearance-none bg-white cursor-pointer" id="new-sub">
+                                    <option value="">Chọn môn</option>
                                     {data.subjectConfigs.map((s: any) => <option key={s.name} value={s.name}>{s.name}</option>)}
                                 </select>
                             </div>
                             <div className="space-y-1">
                                 <label className="text-[10px] font-black text-blue-500 uppercase ml-2 tracking-widest">Lớp dạy</label>
-                                <input type="text" placeholder="6A1, 7B2..." className="w-full p-4 rounded-2xl border-none shadow-sm font-bold" id="new-cls"/>
+                                <input type="text" placeholder="6A1, 7B2..." className="w-full p-4 rounded-2xl border-none shadow-sm font-bold focus:ring-2 focus:ring-blue-500" id="new-cls"/>
                             </div>
                             <div className="space-y-1">
                                 <label className="text-[10px] font-black text-blue-500 uppercase ml-2 tracking-widest">Chức vụ kiêm nhiệm</label>
-                                <div className="flex flex-wrap gap-1 max-h-24 overflow-y-auto p-2 bg-white rounded-2xl shadow-sm">
+                                <div className="flex flex-wrap gap-1 max-h-32 overflow-y-auto p-3 bg-white rounded-2xl shadow-sm border border-slate-100">
                                     {data.roles.map((r: any) => (
-                                        <button key={r.id} onClick={() => toggleNewRole(r.name)} className={`text-[9px] px-2 py-1 rounded-lg border font-bold transition-all ${newTeacherRoles.includes(r.name) ? 'bg-blue-600 text-white border-blue-600' : 'bg-slate-50 text-slate-400 border-slate-200'}`}>
+                                        <button key={r.id} onClick={() => toggleNewRole(r.name)} className={`text-[10px] px-3 py-1.5 rounded-xl border font-black transition-all ${newTeacherRoles.includes(r.name) ? 'bg-blue-600 text-white border-blue-600' : 'bg-slate-50 text-slate-400 border-slate-200 hover:border-blue-300'}`}>
                                             {r.name}
                                         </button>
                                     ))}
@@ -278,7 +278,7 @@ const App = () => {
                                     });
                                     setIsAdding(false);
                                     setNewTeacherRoles([]);
-                                }} className="w-full bg-blue-600 text-white p-4 rounded-2xl font-black flex items-center justify-center gap-2 shadow-lg hover:bg-blue-700 transition-all"><Plus/> THÊM NGAY</button>
+                                }} className="w-full bg-blue-600 text-white p-4 rounded-2xl font-black flex items-center justify-center gap-2 shadow-lg hover:bg-blue-700 transition-all"><Plus size={20}/> THÊM MỚI</button>
                             </div>
                         </div>
                     </div>
@@ -307,10 +307,10 @@ const App = () => {
                                         <td className="p-8">
                                             {isEditing ? (
                                                 <div className="space-y-3">
-                                                    <input className="font-bold border-2 border-blue-100 rounded-xl p-2 w-full outline-none focus:border-blue-500" value={editState.name} onChange={e => setEditState({...editState, name: e.target.value})}/>
-                                                    <div className="flex flex-wrap gap-1">
+                                                    <input className="font-bold border-2 border-blue-100 rounded-xl p-3 w-full outline-none focus:border-blue-500 shadow-sm" value={editState.name} onChange={e => setEditState({...editState, name: e.target.value})}/>
+                                                    <div className="flex flex-wrap gap-1 p-2 bg-white rounded-xl border border-slate-100">
                                                         {data.roles.map((r: any) => (
-                                                            <button key={r.id} onClick={() => toggleEditRole(r.name)} className={`text-[8px] px-2 py-0.5 rounded border font-bold ${editState.roles.includes(r.name) ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-400'}`}>
+                                                            <button key={r.id} onClick={() => toggleEditRole(r.name)} className={`text-[9px] px-2.5 py-1 rounded-lg border font-black transition-all ${editState.roles.includes(r.name) ? 'bg-blue-600 text-white border-blue-600' : 'bg-slate-50 text-slate-400 border-slate-200'}`}>
                                                                 {r.name}
                                                             </button>
                                                         ))}
@@ -321,7 +321,7 @@ const App = () => {
                                                     <div className="font-black text-slate-800 text-xl">{t.name}</div>
                                                     <div className="flex flex-wrap gap-1">
                                                         {(t.roles || []).map((r: string) => (
-                                                            <span key={r} className="text-[8px] font-black uppercase bg-blue-50 text-blue-500 px-1.5 py-0.5 rounded-md border border-blue-100">
+                                                            <span key={r} className="text-[9px] font-black uppercase bg-blue-50 text-blue-500 px-2 py-0.5 rounded-lg border border-blue-100">
                                                                 {r}
                                                             </span>
                                                         ))}
@@ -330,22 +330,22 @@ const App = () => {
                                             )}
                                         </td>
                                         <td className="p-8">
-                                            <input type="text" className="w-full p-2 bg-slate-50 rounded-xl border-none font-bold text-slate-600 text-sm shadow-inner" value={assignment} onChange={e => updateWeekData(currentWeek, { assignments: { ...assignments, [t.id]: e.target.value } })}/>
+                                            <input type="text" className="w-full p-3 bg-slate-50 rounded-xl border-none font-bold text-slate-600 text-sm shadow-inner focus:ring-2 focus:ring-blue-100" value={assignment} onChange={e => updateWeekData(currentWeek, { assignments: { ...assignments, [t.id]: e.target.value } })}/>
                                         </td>
                                         <td className="p-8 text-center font-black text-slate-800 text-2xl">{tkbCount}</td>
                                         <td className="p-8">
-                                            <input type="number" step="0.5" className="w-20 mx-auto block text-center p-2 bg-orange-50 border-2 border-orange-100 rounded-xl font-black text-orange-700 outline-none" value={log.bu || 0} onChange={e => updateLog(t.id, 'bu', parseFloat(e.target.value) || 0)}/>
+                                            <input type="number" step="0.5" className="w-20 mx-auto block text-center p-3 bg-orange-50 border-2 border-orange-100 rounded-2xl font-black text-orange-700 outline-none hover:border-orange-300 transition-all" value={log.bu || 0} onChange={e => updateLog(t.id, 'bu', parseFloat(e.target.value) || 0)}/>
                                         </td>
                                         <td className="p-8">
-                                            <input type="number" step="0.5" className="w-20 mx-auto block text-center p-2 bg-orange-50 border-2 border-orange-100 rounded-xl font-black text-orange-700 outline-none" value={log.tang || 0} onChange={e => updateLog(t.id, 'tang', parseFloat(e.target.value) || 0)}/>
+                                            <input type="number" step="0.5" className="w-20 mx-auto block text-center p-3 bg-orange-50 border-2 border-orange-100 rounded-2xl font-black text-orange-700 outline-none hover:border-orange-300 transition-all" value={log.tang || 0} onChange={e => updateLog(t.id, 'tang', parseFloat(e.target.value) || 0)}/>
                                         </td>
                                         <td className="p-8 text-right">
                                             <div className="flex justify-end gap-2">
                                                 {isEditing ? (
-                                                    <button onClick={saveEdit} className="text-emerald-500 p-2 hover:bg-emerald-50 rounded-xl transition-all"><Check/></button>
+                                                    <button onClick={saveEdit} className="text-emerald-500 p-3 hover:bg-emerald-50 rounded-2xl transition-all shadow-sm border border-emerald-100"><Check size={20}/></button>
                                                 ) : (
                                                     <>
-                                                        <button onClick={() => startEditing(t)} className="text-slate-200 hover:text-blue-500 p-2 hover:bg-blue-50 rounded-xl transition-all"><Edit3 size={18}/></button>
+                                                        <button onClick={() => startEditing(t)} className="text-slate-300 hover:text-blue-500 p-3 hover:bg-blue-50 rounded-2xl transition-all"><Edit3 size={20}/></button>
                                                         <button onClick={() => {
                                                             if(confirm("Xóa GV khỏi tuần " + currentWeek + "?")) {
                                                                 updateWeekData(currentWeek, { 
@@ -354,7 +354,7 @@ const App = () => {
                                                                     logs: { ...logs, [t.id]: undefined }
                                                                 });
                                                             }
-                                                        }} className="text-slate-200 hover:text-red-500 p-2 hover:bg-red-50 rounded-xl transition-all"><Trash2 size={18}/></button>
+                                                        }} className="text-slate-300 hover:text-red-500 p-3 hover:bg-red-50 rounded-2xl transition-all"><Trash2 size={20}/></button>
                                                     </>
                                                 )}
                                             </div>
@@ -369,55 +369,54 @@ const App = () => {
         );
     };
 
-    // --- TAB THỰC DẠY ---
+    // --- TAB THỰC DẠY (LŨY KẾ THEO DẢI TUẦN) ---
     const WeeklyTab = () => {
+        // Gom dữ liệu theo giáo viên trong dải tuần
         const stats = useMemo(() => {
-            const allTeacherIds = new Set<string>();
-            for (let i = startRange; i <= endRange; i++) {
-                const w = data.weeklyRecords[i];
-                if (w) w.teachers.forEach((t: any) => allTeacherIds.add(t.id));
+            const teacherAggregates: Record<string, { name: string, tkb: number, bu: number, tang: number }> = {};
+            
+            for (let w = startRange; w <= endRange; w++) {
+                const record = data.weeklyRecords[w];
+                if (!record) continue;
+
+                record.teachers.forEach((t: any) => {
+                    if (!teacherAggregates[t.id]) {
+                        teacherAggregates[t.id] = { name: t.name, tkb: 0, bu: 0, tang: 0 };
+                    }
+                    
+                    const log = record.logs?.[t.id] || { bu: 0, tang: 0 };
+                    // Nếu đã có snapshot tiết thực dạy TKB thì dùng, không thì tính từ chuỗi phân công
+                    const currentTkb = (log.actual !== undefined) ? log.actual : getTKBPeriods(record.assignments[t.id] || "");
+                    
+                    teacherAggregates[t.id].tkb += currentTkb;
+                    teacherAggregates[t.id].bu += (log.bu || 0);
+                    teacherAggregates[t.id].tang += (log.tang || 0);
+                });
             }
 
-            return Array.from(allTeacherIds).map(id => {
-                let totalTKB = 0, totalBu = 0, totalTang = 0, name = "N/A";
-
-                for (let i = startRange; i <= endRange; i++) {
-                    const w = data.weeklyRecords[i];
-                    if (w) {
-                        const tInWeek = w.teachers.find((tx: any) => tx.id === id);
-                        if (tInWeek) {
-                            name = tInWeek.name;
-                            const log = (w.logs || {})[id];
-                            if (log) {
-                                totalTKB += (log.actual ?? getTKBPeriods(w.assignments[id] || ""));
-                                totalBu += (log.bu || 0);
-                                totalTang += (log.tang || 0);
-                            } else {
-                                totalTKB += getTKBPeriods(w.assignments[id] || "");
-                            }
-                        }
-                    }
-                }
-                return { name, totalTKB, totalBu, totalTang, totalAll: totalTKB + totalBu + totalTang };
-            }).filter(s => s.name !== "N/A");
+            return Object.values(teacherAggregates).sort((a, b) => a.name.localeCompare(b.name));
         }, [data, startRange, endRange]);
 
         return (
-            <div className="p-8">
-                <div className="flex justify-between items-center mb-12">
+            <div className="p-8 animate-fadeIn">
+                <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center mb-12 gap-8">
                     <div className="flex items-center gap-6 bg-white border-2 border-slate-100 p-6 rounded-[3rem] shadow-sm">
                         <div className="flex items-center gap-4">
                             <label className="text-[10px] font-black uppercase text-blue-500 tracking-widest">Từ tuần</label>
-                            <input type="number" value={startRange} onChange={e => setStartRange(Math.max(1, parseInt(e.target.value) || 1))} className="w-16 p-3 bg-slate-50 rounded-xl font-black text-center text-xl outline-none focus:ring-2 focus:ring-blue-500"/>
+                            <input type="number" min="1" value={startRange} onChange={e => setStartRange(Math.max(1, parseInt(e.target.value) || 1))} className="w-20 p-4 bg-slate-50 rounded-2xl font-black text-center text-2xl outline-none focus:ring-4 focus:ring-blue-500/10 border-none"/>
                         </div>
-                        <ChevronRight className="text-slate-300" />
+                        <ChevronRight className="text-slate-200" size={32} />
                         <div className="flex items-center gap-4">
                             <label className="text-[10px] font-black uppercase text-blue-500 tracking-widest">Đến tuần</label>
-                            <input type="number" value={endRange} onChange={e => setEndRange(Math.max(startRange, parseInt(e.target.value) || 1))} className="w-16 p-3 bg-slate-50 rounded-xl font-black text-center text-xl outline-none focus:ring-2 focus:ring-blue-500"/>
+                            <input type="number" min={startRange} value={endRange} onChange={e => setEndRange(Math.max(startRange, parseInt(e.target.value) || 1))} className="w-20 p-4 bg-slate-50 rounded-2xl font-black text-center text-2xl outline-none focus:ring-4 focus:ring-blue-500/10 border-none"/>
                         </div>
-                        <div className="ml-6 px-6 py-2 bg-blue-600 text-white rounded-2xl font-black text-sm uppercase shadow-lg">
+                        <div className="ml-6 px-8 py-3 bg-blue-600 text-white rounded-[1.5rem] font-black text-sm uppercase shadow-xl shadow-blue-500/20">
                             Tổng {endRange - startRange + 1} tuần
                         </div>
+                    </div>
+                    <div className="text-right">
+                        <h2 className="text-3xl font-black text-slate-800 tracking-tighter uppercase italic">Tổng hợp thực dạy</h2>
+                        <p className="text-slate-400 font-bold text-xs uppercase tracking-widest mt-1">Dữ liệu lũy kế toàn trường</p>
                     </div>
                 </div>
 
@@ -429,23 +428,43 @@ const App = () => {
                                 <th className="p-10 text-center">Tổng Tiết TKB</th>
                                 <th className="p-10 text-center text-orange-600">Tổng Bù</th>
                                 <th className="p-10 text-center text-orange-600">Tổng Tăng tiết</th>
-                                <th className="p-10 text-center bg-blue-50/50">Tổng thực dạy</th>
+                                <th className="p-10 text-center bg-blue-50/50 text-blue-600">Tổng Thực dạy</th>
                             </tr>
                         </thead>
                         <tbody>
-                            {stats.map((s: any, i: number) => (
-                                <tr key={i} className="border-b hover:bg-slate-50/50 transition-all">
-                                    <td className="p-10 font-black text-slate-700 text-2xl">{s.name}</td>
-                                    <td className="p-10 text-center font-black text-slate-500 text-3xl">{s.totalTKB.toFixed(1)}</td>
-                                    <td className="p-10 text-center font-black text-orange-600 text-3xl">{s.totalBu.toFixed(1)}</td>
-                                    <td className="p-10 text-center font-black text-orange-600 text-3xl">{s.totalTang.toFixed(1)}</td>
-                                    <td className="p-10 text-center bg-blue-50/20">
-                                        <div className="text-5xl font-black text-blue-600 tracking-tighter">{s.totalAll.toFixed(1)}</div>
-                                    </td>
-                                </tr>
-                            ))}
+                            {stats.map((s: any, i: number) => {
+                                const totalAll = s.tkb + s.bu + s.tang;
+                                return (
+                                    <tr key={i} className="border-b hover:bg-slate-50/50 transition-all">
+                                        <td className="p-10">
+                                            <div className="font-black text-slate-700 text-2xl">{s.name}</div>
+                                            <div className="text-[10px] font-bold text-slate-300 uppercase mt-1 tracking-widest">Dữ liệu lũy kế</div>
+                                        </td>
+                                        <td className="p-10 text-center font-black text-slate-400 text-3xl">
+                                            {s.tkb % 1 === 0 ? s.tkb : s.tkb.toFixed(1)}
+                                        </td>
+                                        <td className="p-10 text-center font-black text-orange-600 text-3xl">
+                                            {s.bu % 1 === 0 ? s.bu : s.bu.toFixed(1)}
+                                        </td>
+                                        <td className="p-10 text-center font-black text-orange-600 text-3xl">
+                                            {s.tang % 1 === 0 ? s.tang : s.tang.toFixed(1)}
+                                        </td>
+                                        <td className="p-10 text-center bg-blue-50/20">
+                                            <div className="text-6xl font-black text-blue-700 tracking-tighter">
+                                                {totalAll % 1 === 0 ? totalAll : totalAll.toFixed(1)}
+                                            </div>
+                                        </td>
+                                    </tr>
+                                );
+                            })}
                         </tbody>
                     </table>
+                    {stats.length === 0 && (
+                        <div className="p-32 text-center">
+                            <RefreshCcw size={64} className="mx-auto text-slate-100 mb-6 animate-spin-slow" />
+                            <p className="font-black text-slate-300 uppercase tracking-widest text-sm italic">Không có dữ liệu trong dải tuần đã chọn</p>
+                        </div>
+                    )}
                 </div>
             </div>
         );
@@ -456,47 +475,55 @@ const App = () => {
         const [reportWeeks, setReportWeeks] = useState(4);
         
         const stats = useMemo(() => {
-            const allTeacherIds = new Set<string>();
+            const teacherStatsMap: Record<string, any> = {};
+            
             for (let i = 1; i <= reportWeeks; i++) {
                 const w = data.weeklyRecords[i];
-                if (w) w.teachers.forEach((t: any) => allTeacherIds.add(t.id));
+                if (!w) continue;
+                
+                w.teachers.forEach((t: any) => {
+                    if (!teacherStatsMap[t.id]) {
+                        teacherStatsMap[t.id] = { 
+                            name: t.name, 
+                            totalQuota: 0, 
+                            totalActual: 0, 
+                            totalExtra: 0, 
+                            lastQ: 0 
+                        };
+                    }
+                    
+                    const q = Math.max(0, data.standardQuota - getTeacherReduction(t.roles));
+                    teacherStatsMap[t.id].totalQuota += q;
+                    teacherStatsMap[t.id].lastQ = q; // QM tuần gần nhất
+
+                    const log = (w.logs || {})[t.id];
+                    if (log) {
+                        teacherStatsMap[t.id].totalActual += (log.actual ?? getTKBPeriods(w.assignments[t.id] || ""));
+                        teacherStatsMap[t.id].totalExtra += (log.bu || 0) + (log.tang || 0);
+                    } else {
+                        teacherStatsMap[t.id].totalActual += getTKBPeriods(w.assignments[t.id] || "");
+                    }
+                });
             }
 
-            return Array.from(allTeacherIds).map(id => {
-                let totalQuota = 0, totalActual = 0, totalExtra = 0, name = "N/A", lastQ = 0;
-                for (let i = 1; i <= reportWeeks; i++) {
-                    const w = data.weeklyRecords[i];
-                    if (w) {
-                        const tInWeek = w.teachers.find((tx: any) => tx.id === id);
-                        if (tInWeek) {
-                            name = tInWeek.name;
-                            const q = Math.max(0, data.standardQuota - getTeacherReduction(tInWeek.roles));
-                            totalQuota += q; lastQ = q;
-                            const log = (w.logs || {})[id];
-                            if (log) {
-                                totalActual += (log.actual ?? getTKBPeriods(w.assignments[id] || ""));
-                                totalExtra += (log.bu || 0) + (log.tang || 0);
-                            } else {
-                                totalActual += getTKBPeriods(w.assignments[id] || "");
-                            }
-                        }
-                    }
-                }
-                const total = totalActual + totalExtra;
-                return { name, lastQ, totalQuota, totalActual, totalExtra, total, balance: total - totalQuota };
-            }).filter(s => s.name !== "N/A");
+            return Object.values(teacherStatsMap).map((s: any) => {
+                const total = s.totalActual + s.totalExtra;
+                return { ...s, total, balance: total - s.totalQuota };
+            }).sort((a, b) => a.name.localeCompare(b.name));
         }, [data, reportWeeks]);
 
         return (
             <div className="p-8 animate-fadeIn">
                 <div className="flex justify-between items-end mb-12">
                     <div>
-                        <h2 className="text-3xl font-black text-slate-800 tracking-tighter uppercase">Quyết toán Tiết dạy & Dôi dư</h2>
-                        <p className="text-slate-400 font-bold uppercase text-[10px] tracking-widest flex items-center gap-2 mt-1">Lũy kế từ tuần 1 đến tuần {reportWeeks}</p>
+                        <h2 className="text-4xl font-black text-slate-800 tracking-tighter uppercase italic">Quyết toán Tiết dạy</h2>
+                        <p className="text-slate-400 font-bold uppercase text-[10px] tracking-widest flex items-center gap-2 mt-1">
+                            <Info size={14} className="text-blue-500"/> Lũy kế từ Tuần 1 đến Tuần {reportWeeks}
+                        </p>
                     </div>
-                    <div className="bg-slate-100 p-3 rounded-[2rem] flex items-center gap-4">
-                        <span className="text-[10px] font-black text-slate-400 ml-4 uppercase">Xem đến tuần:</span>
-                        <input type="number" value={reportWeeks} onChange={e => setReportWeeks(parseInt(e.target.value) || 1)} className="w-20 p-3 bg-white rounded-xl text-center font-black text-blue-600 outline-none focus:ring-2 focus:ring-blue-500 shadow-sm border-none"/>
+                    <div className="bg-slate-100 p-4 rounded-[2.5rem] flex items-center gap-4 shadow-inner border border-slate-200">
+                        <span className="text-[10px] font-black text-slate-400 ml-4 uppercase tracking-widest">Xem đến tuần:</span>
+                        <input type="number" value={reportWeeks} onChange={e => setReportWeeks(parseInt(e.target.value) || 1)} className="w-20 p-3 bg-white rounded-2xl text-center font-black text-blue-600 outline-none shadow-sm border-none focus:ring-4 focus:ring-blue-100"/>
                     </div>
                 </div>
                 <div className="bg-white rounded-[3.5rem] border-2 border-slate-50 overflow-hidden shadow-sm">
@@ -507,19 +534,24 @@ const App = () => {
                                 <th className="p-8 text-center">Định mức</th>
                                 <th className="p-8 text-center">Thực dạy</th>
                                 <th className="p-8 text-center text-orange-600">Bù/Tăng</th>
-                                <th className="p-8 text-center bg-blue-50/30">Tổng Lũy kế</th>
+                                <th className="p-8 text-center bg-blue-50/30 text-blue-700">Tổng Lũy kế</th>
                                 <th className="p-8 text-center bg-slate-100">Chênh lệch</th>
                             </tr>
                         </thead>
                         <tbody>
                             {stats.map((s: any, i: number) => (
                                 <tr key={i} className="border-b hover:bg-slate-50/50 transition-all">
-                                    <td className="p-8"><div className="font-black text-slate-700 text-xl">{s.name}</div><div className="text-[9px] font-bold text-slate-300 uppercase mt-1">ĐM: {s.lastQ}t/tuần</div></td>
-                                    <td className="p-8 text-center font-black text-slate-400">{s.totalQuota.toFixed(1)}</td>
-                                    <td className="p-8 text-center font-black text-slate-800 text-xl">{s.totalActual.toFixed(1)}</td>
-                                    <td className="p-8 text-center font-black text-orange-600 text-xl">+{s.totalExtra.toFixed(1)}</td>
-                                    <td className="p-8 text-center font-black text-3xl text-blue-700 bg-blue-50/10">{s.total.toFixed(1)}</td>
-                                    <td className={`p-8 text-center text-3xl font-black ${s.balance >= 0 ? 'text-emerald-600 bg-emerald-50/25' : 'text-red-500 bg-red-50/25'}`}>{s.balance > 0 ? `+${s.balance.toFixed(1)}` : s.balance.toFixed(1)}</td>
+                                    <td className="p-8">
+                                        <div className="font-black text-slate-700 text-xl">{s.name}</div>
+                                        <div className="text-[9px] font-bold text-slate-300 uppercase mt-1">ĐM: {s.lastQ}t/tuần</div>
+                                    </td>
+                                    <td className="p-8 text-center font-black text-slate-400 text-xl">{s.totalQuota.toFixed(1)}</td>
+                                    <td className="p-8 text-center font-black text-slate-800 text-2xl">{s.totalActual.toFixed(1)}</td>
+                                    <td className="p-8 text-center font-black text-orange-600 text-2xl">+{s.totalExtra.toFixed(1)}</td>
+                                    <td className="p-8 text-center font-black text-4xl text-blue-700 bg-blue-50/10 tracking-tighter">{s.total.toFixed(1)}</td>
+                                    <td className={`p-8 text-center text-3xl font-black ${s.balance >= 0 ? 'text-emerald-600 bg-emerald-50/25' : 'text-red-500 bg-red-50/25'}`}>
+                                        {s.balance > 0 ? `+${s.balance.toFixed(1)}` : s.balance.toFixed(1)}
+                                    </td>
                                 </tr>
                             ))}
                         </tbody>
@@ -535,7 +567,7 @@ const App = () => {
                 <div className="container mx-auto flex flex-col md:flex-row justify-between items-center gap-8">
                     <div className="flex items-center gap-5">
                         <div className="bg-blue-600 p-4 rounded-[1.5rem] text-white shadow-2xl rotate-3"><LayoutDashboard size={32}/></div>
-                        <h1 className="font-black text-3xl tracking-tighter text-slate-800 uppercase italic">THCS PRO <span className="text-blue-600 text-sm align-top italic font-black">v6.3</span></h1>
+                        <h1 className="font-black text-3xl tracking-tighter text-slate-800 uppercase italic">THCS PRO <span className="text-blue-600 text-sm align-top italic font-black">v6.4</span></h1>
                     </div>
                     <nav className="flex gap-2 bg-slate-100 p-2 rounded-[2.5rem] overflow-x-auto no-scrollbar">
                         {[
@@ -544,7 +576,7 @@ const App = () => {
                             {id: 'weekly', icon: CalendarDays, label: 'Thực dạy'},
                             {id: 'reports', icon: FileText, label: 'Báo cáo'},
                         ].map(tab => (
-                            <button key={tab.id} onClick={() => setActiveTab(tab.id)} className={`flex items-center gap-3 px-8 py-4.5 rounded-[2.2rem] text-[11px] font-black transition-all whitespace-nowrap ${activeTab === tab.id ? 'bg-white text-blue-600 shadow-xl scale-105' : 'text-slate-400 hover:text-slate-600'}`}>
+                            <button key={tab.id} onClick={() => setActiveTab(tab.id)} className={`flex items-center gap-3 px-8 py-4.5 rounded-[2.2rem] text-[11px] font-black transition-all whitespace-nowrap ${activeTab === tab.id ? 'bg-white text-blue-600 shadow-xl scale-105 border border-slate-50' : 'text-slate-400 hover:text-slate-600 hover:bg-white/50'}`}>
                                 <tab.icon size={20}/> {tab.label.toUpperCase()}
                             </button>
                         ))}
@@ -555,29 +587,32 @@ const App = () => {
                 <div className="bg-white rounded-[5rem] shadow-2xl border-4 border-white min-h-[800px] overflow-hidden">
                     {activeTab === 'config' && (
                         <div className="p-10 animate-fadeIn">
-                            <h2 className="text-3xl font-black mb-10 text-slate-800 uppercase italic">Cấu hình chuẩn</h2>
+                            <h2 className="text-3xl font-black mb-10 text-slate-800 uppercase italic">Cấu hình Hệ thống</h2>
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
-                                <div className="bg-slate-50 p-10 rounded-[3rem] border border-slate-100">
-                                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4">Định mức THCS (Tiết/Tuần)</label>
+                                <div className="bg-slate-50 p-10 rounded-[3rem] border border-slate-100 shadow-inner">
+                                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4">Định mức THCS chuẩn (Tiết/Tuần)</label>
                                     <input type="number" value={data.standardQuota} onChange={e => updateData({standardQuota: parseFloat(e.target.value) || 0})} className="text-8xl font-black text-blue-600 bg-transparent outline-none w-full tracking-tighter"/>
                                 </div>
-                                <div className="bg-slate-50 p-10 rounded-[3rem] border border-slate-100 max-h-[500px] overflow-y-auto">
-                                    <h3 className="font-black text-slate-700 uppercase text-xs mb-6 tracking-widest flex items-center gap-3"><Book size={18}/> Định mức môn học</h3>
+                                <div className="bg-slate-50 p-10 rounded-[3rem] border border-slate-100 max-h-[600px] overflow-y-auto shadow-inner no-scrollbar">
+                                    <h3 className="font-black text-slate-700 uppercase text-xs mb-8 tracking-widest flex items-center gap-3"><Book size={18} className="text-blue-500"/> Định mức môn học</h3>
                                     {data.subjectConfigs.map((s: any, i: number) => (
-                                        <div key={i} className="flex justify-between items-center py-4 border-b border-slate-100 last:border-0">
+                                        <div key={i} className="flex justify-between items-center py-4 border-b border-slate-100 last:border-0 hover:bg-white/50 px-4 rounded-xl transition-all">
                                             <span className="font-black text-slate-600 uppercase text-[11px]">{s.name}</span>
-                                            <input type="number" step="0.5" className="w-20 p-3 bg-white rounded-xl text-center font-black text-blue-600 border border-slate-200 outline-none" value={s.periods} onChange={e => {
+                                            <input type="number" step="0.5" className="w-24 p-3 bg-white rounded-2xl text-center font-black text-blue-600 border border-slate-200 outline-none focus:ring-4 focus:ring-blue-500/10" value={s.periods} onChange={e => {
                                                 const nc = [...data.subjectConfigs]; nc[i].periods = parseFloat(e.target.value) || 0; updateData({subjectConfigs: nc});
                                             }}/>
                                         </div>
                                     ))}
-                                    <h3 className="font-black text-slate-700 uppercase text-xs mt-8 mb-6 tracking-widest flex items-center gap-3"><Users size={18}/> Chức vụ kiêm nhiệm</h3>
+                                    <h3 className="font-black text-slate-700 uppercase text-xs mt-12 mb-8 tracking-widest flex items-center gap-3"><Users size={18} className="text-emerald-500"/> Danh mục Chức vụ</h3>
                                     {data.roles.map((r: any, i: number) => (
-                                        <div key={r.id} className="flex justify-between items-center py-4 border-b border-slate-100 last:border-0">
+                                        <div key={r.id} className="flex justify-between items-center py-4 border-b border-slate-100 last:border-0 hover:bg-white/50 px-4 rounded-xl transition-all">
                                             <span className="font-black text-slate-600 uppercase text-[11px]">{r.name}</span>
-                                            <input type="number" className="w-20 p-3 bg-white rounded-xl text-center font-black text-blue-600 border border-slate-200 outline-none" value={r.reduction} onChange={e => {
-                                                const nr = [...data.roles]; nr[i].reduction = parseInt(e.target.value) || 0; updateData({roles: nr});
-                                            }}/>
+                                            <div className="flex items-center gap-3">
+                                                <span className="text-[10px] font-bold text-slate-300">GIẢM</span>
+                                                <input type="number" className="w-24 p-3 bg-white rounded-2xl text-center font-black text-emerald-600 border border-slate-200 outline-none focus:ring-4 focus:ring-emerald-500/10" value={r.reduction} onChange={e => {
+                                                    const nr = [...data.roles]; nr[i].reduction = parseInt(e.target.value) || 0; updateData({roles: nr});
+                                                }}/>
+                                            </div>
                                         </div>
                                     ))}
                                 </div>
@@ -590,8 +625,8 @@ const App = () => {
                 </div>
             </main>
             {syncStatus.message && (
-                <div className="fixed bottom-12 left-1/2 -translate-x-1/2 bg-slate-900 text-white px-12 py-6 rounded-[3rem] shadow-2xl flex items-center gap-4 animate-fadeIn font-black text-sm z-[100] border-2 border-white/10 shadow-blue-500/20">
-                    <CheckCircle2 size={24} className="text-emerald-400" />
+                <div className="fixed bottom-12 left-1/2 -translate-x-1/2 bg-slate-900 text-white px-12 py-6 rounded-[3rem] shadow-2xl flex items-center gap-4 animate-fadeIn font-black text-sm z-[100] border-2 border-white/10 shadow-blue-500/30">
+                    <div className="p-2 bg-blue-500 rounded-full"><CheckCircle2 size={18} className="text-white" /></div>
                     {syncStatus.message}
                 </div>
             )}
