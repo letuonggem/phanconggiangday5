@@ -11,7 +11,7 @@ import {
 } from 'lucide-react';
 
 // --- CẤU HÌNH HỆ THỐNG ---
-const STORAGE_KEY = 'thcs_mgmt_v4_final_validation';
+const STORAGE_KEY = 'thcs_mgmt_v4_final_stable';
 
 const DEFAULT_SUBJECT_CONFIGS = [
     { name: 'Toán', periods: 4 },
@@ -39,13 +39,6 @@ const normalizeClassStr = (str: string) => {
               .join(', ');
 };
 
-/**
- * Hàm kiểm tra xung đột phân công
- * @param proposedAssignments Chuỗi phân công mới (Dạng "Môn: Lớp1, Lớp2; ...")
- * @param currentTeachers Danh sách GV hiện có trong hệ thống
- * @param excludeTeacherId ID giáo viên loại trừ (dùng khi chỉnh sửa chính GV đó)
- * @returns Mảng các thông báo lỗi nếu có xung đột
- */
 const findConflicts = (proposedAssignments: string, currentTeachers: any[], excludeTeacherId?: string) => {
     const conflicts: string[] = [];
     if (!proposedAssignments) return conflicts;
@@ -76,7 +69,7 @@ const findConflicts = (proposedAssignments: string, currentTeachers: any[], excl
 
                     inputClasses.forEach(c => {
                         if (exClasses.includes(c)) {
-                            conflicts.push(`Lớp ${c} môn ${subPart.trim()} (đã có GV: ${teacher.name})`);
+                            conflicts.push(`Lớp ${c} môn ${subPart.trim()} (GV: ${teacher.name})`);
                         }
                     });
                 }
@@ -128,32 +121,28 @@ const App = () => {
         };
     }, [data.subjectConfigs]);
 
-    // --- COMPONENT FORM NHẬP LIỆU (REAL-TIME VALIDATION) ---
+    // --- FORM NHẬP TAY (REAL-TIME) ---
     const AddTeacherForm = ({ onAdd, subjects, allTeachers }: any) => {
         const [name, setName] = useState('');
         const [sub, setSub] = useState('');
         const [cls, setCls] = useState('');
         const [liveConflicts, setLiveConflicts] = useState<string[]>([]);
 
-        // Kiểm tra ngay khi đang gõ
         useEffect(() => {
             if (sub && cls) {
                 const proposed = `${sub}: ${normalizeClassStr(cls)}`;
                 const conflicts = findConflicts(proposed, allTeachers);
                 setLiveConflicts(conflicts);
-            } else {
-                setLiveConflicts([]);
-            }
+            } else { setLiveConflicts([]); }
         }, [sub, cls, allTeachers]);
 
         const handleSubmit = () => {
             if (!name || !sub || !cls) return alert("Vui lòng điền đủ thông tin!");
-            if (liveConflicts.length > 0) return alert(`Lỗi: ${liveConflicts[0]}`);
+            if (liveConflicts.length > 0) return;
 
             const proposed = `${sub}: ${normalizeClassStr(cls)}`;
             onAdd({ name, assignments: proposed });
             setName(''); setSub(''); setCls('');
-            setLiveConflicts([]);
         };
 
         return (
@@ -182,14 +171,12 @@ const App = () => {
                 {liveConflicts.length > 0 && (
                     <div className="mb-6 bg-red-100 border-2 border-red-200 p-4 rounded-2xl flex items-center gap-4 animate-fadeIn">
                         <AlertCircle className="text-red-500" size={20}/>
-                        <div className="text-[11px] font-bold text-red-600 uppercase">
-                            KHÔNG THỂ THÊM: {liveConflicts.join(' | ')}
-                        </div>
+                        <div className="text-[11px] font-bold text-red-600 uppercase">BỊ TRÙNG: {liveConflicts.join(' | ')}</div>
                     </div>
                 )}
 
                 <div className="flex justify-between items-center">
-                    <p className="text-[10px] font-bold text-blue-400/60 uppercase italic">Hệ thống phản hồi tức thì nếu phát hiện lớp đã được phân công cho người khác.</p>
+                    <p className="text-[10px] font-bold text-blue-400/60 uppercase italic">Hệ thống phản hồi tức thì để bạn chỉnh sửa ngay lập tức.</p>
                     <button onClick={handleSubmit} disabled={liveConflicts.length > 0} className={`px-12 py-4 rounded-2xl font-black shadow-xl transition-all flex items-center gap-2 ${liveConflicts.length > 0 ? 'bg-slate-300 text-slate-500 cursor-not-allowed' : 'bg-blue-600 text-white hover:bg-blue-700 active:scale-95'}`}>
                         {liveConflicts.length > 0 ? <X size={20}/> : <Plus size={20}/>} XÁC NHẬN THÊM
                     </button>
@@ -203,6 +190,17 @@ const App = () => {
         const [isAdding, setIsAdding] = useState(false);
         const fileRef = useRef<HTMLInputElement>(null);
 
+        const exportTemplate = () => {
+            const templateData = [
+                { "Họ tên": "Nguyễn Văn A", "Phân công (Môn: Lớp1, Lớp2)": "Toán: 6A1, 6A2; Tin: 7A3" },
+                { "Họ tên": "Trần Thị B", "Phân công (Môn: Lớp1, Lớp2)": "Ngữ văn: 8A1, 9A2" }
+            ];
+            const ws = (window as any).XLSX.utils.json_to_sheet(templateData);
+            const wb = (window as any).XLSX.utils.book_new();
+            (window as any).XLSX.utils.book_append_sheet(wb, ws, "Mau_Phan_Cong");
+            (window as any).XLSX.writeFile(wb, "Mau_Phan_Cong_THCS.xlsx");
+        };
+
         const handleImport = (e: any) => {
             const file = e.target.files[0];
             if (!file) return;
@@ -210,7 +208,6 @@ const App = () => {
             reader.onload = (evt: any) => {
                 const wb = (window as any).XLSX.read(evt.target.result, {type:'binary'});
                 const rows = (window as any).XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
-                
                 const errors: string[] = [];
                 const validTeachers: any[] = [];
                 let currentContext = [...data.teachers];
@@ -218,21 +215,17 @@ const App = () => {
                 rows.forEach((row: any, idx: number) => {
                     const name = row['Họ tên'] || row['tengv'] || 'GV mới';
                     const assignments = row['Phân công (Môn: Lớp1, Lớp2)'] || row['Phân công lớp'] || '';
-                    
-                    // Kiểm tra lỗi cho từng dòng Excel
                     const rowConflicts = findConflicts(assignments, currentContext);
-                    
-                    if (rowConflicts.length > 0) {
-                        errors.push(`Dòng ${idx + 2} (${name}): ${rowConflicts.join(', ')}`);
-                    } else {
+                    if (rowConflicts.length > 0) errors.push(`Dòng ${idx + 2} (${name}): ${rowConflicts.join(', ')}`);
+                    else {
                         const newGv = { id: (Date.now() + idx).toString(), name, assignments, roles: [] };
                         validTeachers.push(newGv);
-                        currentContext.push(newGv); // Cập nhật context để dòng sau trong Excel không trùng dòng trước
+                        currentContext.push(newGv);
                     }
                 });
 
                 if (errors.length > 0) {
-                    alert(`IMPORT THẤT BẠI!\n\nPhát hiện ${errors.length} lỗi trùng lấn trong file Excel:\n\n${errors.join('\n')}\n\nVui lòng khắc phục các lỗi trên trong file Excel trước khi thử lại.`);
+                    alert(`LỖI TRÙNG LẤN:\n\n${errors.join('\n')}\n\nVui lòng sửa file mẫu và nhập lại!`);
                     if (fileRef.current) fileRef.current.value = '';
                     return;
                 }
@@ -246,14 +239,17 @@ const App = () => {
 
         return (
             <div className="p-8 animate-fadeIn">
-                <div className="flex justify-between items-center mb-10">
+                <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-6 mb-10">
                     <div>
                         <h2 className="text-3xl font-black text-slate-800 tracking-tight">Danh sách Phân công</h2>
-                        <div className="text-[10px] font-black text-blue-500 uppercase tracking-widest mt-2">Kiểm soát trùng lấn tự động</div>
+                        <div className="text-[10px] font-black text-blue-500 uppercase tracking-widest mt-2">Dữ liệu chuẩn • Kiểm tra trùng lấn tức thì</div>
                     </div>
-                    <div className="flex gap-3">
+                    <div className="flex flex-wrap gap-3">
                         <button onClick={() => setIsAdding(!isAdding)} className="bg-blue-600 text-white px-8 py-4 rounded-2xl flex items-center gap-3 font-bold shadow-xl hover:bg-blue-700 transition-all">
                             <UserPlus size={20}/> {isAdding ? 'Đóng' : 'Thêm GV'}
+                        </button>
+                        <button onClick={exportTemplate} className="bg-white border-2 border-slate-100 text-slate-600 px-6 py-4 rounded-2xl flex items-center gap-3 font-bold hover:bg-slate-50 transition-all">
+                            <Download size={20} className="text-blue-500"/> Tải file mẫu
                         </button>
                         <input type="file" ref={fileRef} className="hidden" onChange={handleImport} accept=".xlsx, .xls"/>
                         <button onClick={() => fileRef.current?.click()} className="bg-emerald-600 text-white px-8 py-4 rounded-2xl flex items-center gap-3 font-bold shadow-xl hover:bg-emerald-700 transition-all">
@@ -284,19 +280,19 @@ const App = () => {
                                                 if (!m || !l) return null;
                                                 return (
                                                     <span key={i} className="bg-white border border-slate-100 px-4 py-2 rounded-xl text-[10px] font-black text-slate-500 shadow-sm flex items-center gap-2">
-                                                        <span className="text-blue-600 uppercase">{m.trim()}</span>
-                                                        <span className="text-slate-800">{normalizeClassStr(l)}</span>
+                                                        <span className="text-blue-600 uppercase font-black">{m.trim()}</span>
+                                                        <span className="text-slate-800 font-bold">{normalizeClassStr(l)}</span>
                                                     </span>
                                                 );
                                             })}
                                             <button onClick={() => {
-                                                const news = prompt("Sửa phân công:", t.assignments);
+                                                const news = prompt("Sửa phân công (vd: Toán: 6A1, 6A2):", t.assignments);
                                                 if (news) {
                                                     const confs = findConflicts(news, data.teachers, t.id);
                                                     if (confs.length > 0) alert(`Lỗi: ${confs[0]}`);
                                                     else updateData({ teachers: data.teachers.map((x: any) => x.id === t.id ? {...x, assignments: news} : x) });
                                                 }
-                                            }} className="p-2 text-blue-400 opacity-0 group-hover:opacity-100"><Edit3 size={16}/></button>
+                                            }} className="p-2 text-blue-400 opacity-0 group-hover:opacity-100 transition-all"><Edit3 size={16}/></button>
                                         </div>
                                     </td>
                                     <td className="p-8 text-center">
@@ -305,32 +301,33 @@ const App = () => {
                                         </div>
                                     </td>
                                     <td className="p-8 text-right">
-                                        <button onClick={() => updateData({ teachers: data.teachers.filter((x: any) => x.id !== t.id) })} className="text-slate-200 hover:text-red-500 p-4"><Trash2 size={24}/></button>
+                                        <button onClick={() => updateData({ teachers: data.teachers.filter((x: any) => x.id !== t.id) })} className="text-slate-200 hover:text-red-500 p-4 transition-all"><Trash2 size={24}/></button>
                                     </td>
                                 </tr>
                             ))}
                         </tbody>
                     </table>
+                    {data.teachers.length === 0 && <div className="p-32 text-center text-slate-300 font-bold uppercase text-xs tracking-widest italic">Dữ liệu phân công trống</div>}
                 </div>
             </div>
         );
     };
 
-    // --- CÁC TAB KHÁC (GIỮ NGUYÊN LOGIC) ---
+    // --- CÁC TAB CƠ BẢN ---
     const ConfigTab = () => (
         <div className="p-8 animate-fadeIn">
             <h2 className="text-2xl font-black mb-8 text-slate-800">Cài đặt Hệ thống</h2>
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                 <div className="bg-white p-8 rounded-[2.5rem] border-2 border-slate-100 shadow-sm">
-                    <label className="block text-[10px] font-black text-slate-400 uppercase mb-3">Định mức GV chuẩn (Tiết/Tuần)</label>
+                    <label className="block text-[10px] font-black text-slate-400 uppercase mb-3 tracking-widest">Định mức GV chuẩn (Tiết/Tuần)</label>
                     <input type="number" value={data.standardQuota} onChange={e => updateData({standardQuota: parseFloat(e.target.value)})} className="text-6xl font-black text-blue-600 outline-none w-full bg-transparent"/>
                 </div>
-                <div className="bg-white p-8 rounded-[2.5rem] border-2 border-slate-100 shadow-sm">
+                <div className="bg-white p-8 rounded-[2.5rem] border-2 border-slate-100 shadow-sm overflow-hidden">
                    <h3 className="font-black text-slate-700 uppercase text-xs tracking-widest mb-6">Môn học & Định mức</h3>
-                   <div className="space-y-4 max-h-96 overflow-y-auto pr-4">
+                   <div className="space-y-4 max-h-96 overflow-y-auto pr-2 custom-scrollbar">
                        {data.subjectConfigs.map((s: any, i: number) => (
                            <div key={i} className="flex justify-between items-center py-2 border-b border-slate-50">
-                               <span className="font-bold text-slate-600">{s.name}</span>
+                               <span className="font-bold text-slate-600 uppercase text-xs">{s.name}</span>
                                <input type="number" step="0.5" className="w-16 p-2 bg-slate-50 rounded-xl text-center font-bold text-blue-600" value={s.periods} onChange={e => {
                                    const nc = [...data.subjectConfigs]; nc[i].periods = parseFloat(e.target.value); updateData({subjectConfigs: nc});
                                }}/>
@@ -348,22 +345,22 @@ const App = () => {
             <div className="p-8">
                 <div className="flex justify-between items-center mb-12">
                     <div className="flex items-center gap-4 bg-white border-2 border-slate-100 p-3 rounded-[2.5rem]">
-                        <button onClick={() => setCurrentWeek(Math.max(1, currentWeek-1))} className="p-5 hover:bg-slate-100 rounded-3xl"><ChevronLeft/></button>
-                        <div className="px-12 text-center text-3xl font-black">Tuần {currentWeek}</div>
-                        <button onClick={() => setCurrentWeek(currentWeek+1)} className="p-5 hover:bg-slate-100 rounded-3xl"><ChevronRight/></button>
+                        <button onClick={() => setCurrentWeek(Math.max(1, currentWeek-1))} className="p-5 hover:bg-slate-100 rounded-3xl transition-all"><ChevronLeft/></button>
+                        <div className="px-12 text-center text-3xl font-black tracking-tighter">Tuần {currentWeek}</div>
+                        <button onClick={() => setCurrentWeek(currentWeek+1)} className="p-5 hover:bg-slate-100 rounded-3xl transition-all"><ChevronRight/></button>
                     </div>
-                    <button onClick={() => { updateData({ weeklyData: {...data.weeklyData, [currentWeek]: tempLogs} }); alert("Đã lưu!"); }} className="bg-blue-600 text-white px-12 py-5 rounded-3xl font-black shadow-xl">LƯU DỮ LIỆU</button>
+                    <button onClick={() => { updateData({ weeklyData: {...data.weeklyData, [currentWeek]: tempLogs} }); alert("Đã lưu!"); }} className="bg-blue-600 text-white px-12 py-5 rounded-3xl font-black shadow-xl hover:bg-blue-700 transition-all">LƯU DỮ LIỆU</button>
                 </div>
-                <div className="bg-white rounded-[3.5rem] border-2 border-slate-50 overflow-hidden">
+                <div className="bg-white rounded-[3.5rem] border-2 border-slate-50 overflow-hidden shadow-sm">
                     <table className="w-full text-left">
                         <thead className="bg-slate-50 border-b">
-                            <tr><th className="p-8 text-[10px] font-black uppercase text-slate-400">Giáo viên</th><th className="p-8 text-center text-[10px] font-black uppercase text-slate-400">Thực dạy</th></tr>
+                            <tr><th className="p-8 text-[10px] font-black uppercase text-slate-400">Giáo viên</th><th className="p-8 text-center text-[10px] font-black uppercase text-slate-400">Thực dạy tuần này</th></tr>
                         </thead>
                         <tbody>
                             {data.teachers.map((t: any) => (
-                                <tr key={t.id} className="border-b">
+                                <tr key={t.id} className="border-b hover:bg-slate-50/50 transition-all">
                                     <td className="p-8"><div className="font-black text-slate-700 text-xl">{t.name}</div></td>
-                                    <td className="p-8"><input type="number" step="0.5" className="w-32 mx-auto block text-center p-6 bg-emerald-50 rounded-[2.5rem] font-black text-4xl text-emerald-700" value={tempLogs[t.id] || 0} onChange={e => setTempLogs({...tempLogs, [t.id]: parseFloat(e.target.value) || 0})}/></td>
+                                    <td className="p-8"><input type="number" step="0.5" className="w-32 mx-auto block text-center p-6 bg-emerald-50 rounded-[2.5rem] font-black text-4xl text-emerald-700 outline-none focus:bg-white focus:border-emerald-500 transition-all shadow-inner" value={tempLogs[t.id] || 0} onChange={e => setTempLogs({...tempLogs, [t.id]: parseFloat(e.target.value) || 0})}/></td>
                                 </tr>
                             ))}
                         </tbody>
@@ -374,32 +371,35 @@ const App = () => {
     };
 
     const ReportTab = () => (
-        <div className="p-8 text-center py-20">
-            <h2 className="text-3xl font-black text-slate-800 mb-4">Báo cáo Tổng hợp</h2>
-            <p className="text-slate-400">Tính năng đang được tối ưu hóa dữ liệu...</p>
+        <div className="p-8 text-center py-32 animate-fadeIn">
+            <div className="max-w-md mx-auto">
+                <div className="w-20 h-20 bg-blue-100 text-blue-600 rounded-[2rem] flex items-center justify-center mx-auto mb-8"><FileText size={40}/></div>
+                <h2 className="text-3xl font-black text-slate-800 mb-4 tracking-tight">Báo cáo Tổng hợp</h2>
+                <p className="text-slate-400 text-sm leading-relaxed">Tính năng báo cáo lũy tiến đang được đồng bộ dữ liệu. Bạn có thể xem bảng thực dạy tại tab "Tiết dạy" để đối chiếu.</p>
+            </div>
         </div>
     );
 
     const BackupTab = () => (
-        <div className="p-8 text-center py-20">
-            <h2 className="text-3xl font-black text-slate-800 mb-8">Sao lưu Dữ liệu</h2>
+        <div className="p-8 text-center py-24 animate-fadeIn">
+            <h2 className="text-3xl font-black text-slate-800 mb-8 tracking-tight">Sao lưu An toàn</h2>
             <button onClick={() => {
                 const blob = new Blob([JSON.stringify(data)], { type: 'application/json' });
                 const url = URL.createObjectURL(blob);
-                const a = document.createElement('a'); a.href = url; a.download = `backup_${new Date().toLocaleDateString()}.json`; a.click();
-            }} className="bg-blue-600 text-white px-12 py-6 rounded-[2rem] font-black shadow-xl"><Download className="inline mr-2"/> Tải về bản sao lưu</button>
+                const a = document.createElement('a'); a.href = url; a.download = `backup_thcs_${new Date().toLocaleDateString()}.json`; a.click();
+            }} className="bg-blue-600 text-white px-12 py-6 rounded-[2rem] font-black shadow-xl hover:bg-blue-700 transition-all flex items-center gap-3 mx-auto"><Download size={24}/> Tải về bản sao lưu (.json)</button>
         </div>
     );
 
     return (
         <div className="min-h-screen bg-slate-50 flex flex-col font-sans">
             <header className="bg-white border-b-2 border-slate-100 p-5 sticky top-0 z-50 shadow-sm">
-                <div className="container mx-auto flex justify-between items-center">
+                <div className="container mx-auto flex flex-col md:flex-row justify-between items-center gap-6">
                     <div className="flex items-center gap-4">
-                        <div className="bg-blue-600 p-3 rounded-2xl text-white shadow-lg"><LayoutDashboard size={24}/></div>
-                        <h1 className="font-black text-2xl tracking-tighter text-slate-800 uppercase">THCS PRO <span className="text-blue-600">v4.0</span></h1>
+                        <div className="bg-blue-600 p-3 rounded-2xl text-white shadow-lg rotate-3"><LayoutDashboard size={24}/></div>
+                        <h1 className="font-black text-2xl tracking-tighter text-slate-800">THCS PRO <span className="text-blue-600 text-sm align-top">v4.0</span></h1>
                     </div>
-                    <nav className="flex gap-2 bg-slate-100 p-2 rounded-[2.2rem]">
+                    <nav className="flex gap-1 bg-slate-100 p-1.5 rounded-[2.2rem] overflow-x-auto no-scrollbar max-w-full">
                         {[
                             {id: 'config', icon: Settings, label: 'Cài đặt'},
                             {id: 'teachers', icon: Users, label: 'Phân công'},
@@ -407,15 +407,15 @@ const App = () => {
                             {id: 'reports', icon: FileText, label: 'Báo cáo'},
                             {id: 'backup', icon: Save, label: 'Sao lưu'}
                         ].map(tab => (
-                            <button key={tab.id} onClick={() => setActiveTab(tab.id)} className={`flex items-center gap-2 px-6 py-3 rounded-[1.8rem] text-[11px] font-black transition-all ${activeTab === tab.id ? 'bg-white text-blue-600 shadow-md' : 'text-slate-400'}`}>
-                                <tab.icon size={16}/> {tab.label}
+                            <button key={tab.id} onClick={() => setActiveTab(tab.id)} className={`flex items-center gap-2 px-6 py-3.5 rounded-[1.8rem] text-[11px] font-black transition-all whitespace-nowrap ${activeTab === tab.id ? 'bg-white text-blue-600 shadow-md scale-105' : 'text-slate-400 hover:text-slate-600'}`}>
+                                <tab.icon size={16}/> {tab.label.toUpperCase()}
                             </button>
                         ))}
                     </nav>
                 </div>
             </header>
 
-            <main className="container mx-auto p-10 flex-1">
+            <main className="container mx-auto p-4 md:p-10 flex-1">
                 <div className="bg-white rounded-[4rem] shadow-2xl border-4 border-white min-h-[700px] overflow-hidden">
                     {activeTab === 'config' && <ConfigTab />}
                     {activeTab === 'teachers' && <TeacherTab />}
