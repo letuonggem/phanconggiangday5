@@ -11,7 +11,7 @@ import {
 } from 'lucide-react';
 
 // --- CẤU HÌNH HỆ THỐNG ---
-const STORAGE_KEY = 'thcs_teaching_mgmt_v6_6_final';
+const STORAGE_KEY = 'thcs_teaching_mgmt_v6_7_final';
 
 const DEFAULT_SUBJECT_CONFIGS = [
     { name: 'Toán', periods: 4 }, { name: 'Ngữ văn', periods: 4 },
@@ -116,7 +116,7 @@ const App = () => {
         const weekData = getWeekData(currentWeek);
         const { teachers, assignments, logs = {} } = weekData;
 
-        // Logic kiểm tra trùng lớp
+        // Logic kiểm tra trùng lớp để hiển thị cảnh báo
         const classConflicts = useMemo(() => {
             const classToTeachers: Record<string, string[]> = {};
             Object.entries(assignments).forEach(([tId, assignStr]) => {
@@ -124,7 +124,6 @@ const App = () => {
                 const teacher = teachers.find(tx => tx.id === tId);
                 if (!teacher) return;
                 
-                // Parse "Toán: 6A1, 6A2; Văn: 6A3"
                 (assignStr as string).split(';').forEach(part => {
                     const colonIdx = part.indexOf(':');
                     if (colonIdx === -1) return;
@@ -146,6 +145,33 @@ const App = () => {
             });
             return conflicts;
         }, [assignments, teachers]);
+
+        // Hàm kiểm tra trùng khi nhập liệu (để chặn nhập)
+        const checkConflictBeforeInput = (newVal: string, currentTeacherId: string) => {
+            const assignedClassesByOthers = new Set<string>();
+            Object.entries(assignments).forEach(([tId, assignStr]) => {
+                if (tId === currentTeacherId || !assignStr) return;
+                (assignStr as string).split(';').forEach(part => {
+                    const cIdx = part.indexOf(':');
+                    if (cIdx === -1) return;
+                    part.substring(cIdx + 1).split(',').forEach(c => {
+                        const name = c.trim().toUpperCase();
+                        if (name) assignedClassesByOthers.add(name);
+                    });
+                });
+            });
+
+            const newClasses = newVal.split(';').flatMap(p => {
+                const cIdx = p.indexOf(':');
+                if (cIdx === -1) return [];
+                return p.substring(cIdx + 1).split(',').map(c => c.trim().toUpperCase()).filter(c => c);
+            });
+
+            for (const cls of newClasses) {
+                if (assignedClassesByOthers.has(cls)) return cls;
+            }
+            return null;
+        };
 
         const startEditing = (teacher: any) => {
             setEditingId(teacher.id);
@@ -317,12 +343,17 @@ const App = () => {
                                 <button onClick={() => {
                                     const name = (document.getElementById('new-name') as HTMLInputElement).value;
                                     const sub = (document.getElementById('new-sub') as HTMLSelectElement).value;
-                                    const cls = (document.getElementById('new-cls') as HTMLInputElement).value;
-                                    if (!name || !sub || !cls) return alert("Vui lòng nhập đủ thông tin!");
+                                    const clsStr = (document.getElementById('new-cls') as HTMLInputElement).value;
+                                    if (!name || !sub || !clsStr) return alert("Vui lòng nhập đủ thông tin!");
+                                    
+                                    const fullVal = `${sub}: ${normalizeClassStr(clsStr)}`;
+                                    const conflict = checkConflictBeforeInput(fullVal, "adding");
+                                    if (conflict) return alert(`Lớp ${conflict} đã được phân công cho giáo viên khác!`);
+
                                     const tId = Date.now().toString();
                                     updateWeekData(currentWeek, {
                                         teachers: [{ id: tId, name, roles: newTeacherRoles }, ...teachers],
-                                        assignments: { ...assignments, [tId]: `${sub}: ${normalizeClassStr(cls)}` }
+                                        assignments: { ...assignments, [tId]: fullVal }
                                     });
                                     setIsAdding(false);
                                     setNewTeacherRoles([]);
@@ -352,7 +383,7 @@ const App = () => {
                                 const log = logs[t.id] || { bu: 0, tang: 0 };
                                 const isEditing = editingId === t.id;
 
-                                // Phân tích các lớp của giáo viên này để kiểm tra trùng
+                                // Phân tích các lớp của giáo viên này để kiểm tra trùng (cho hiển thị)
                                 const teacherClasses = assignment.split(';').flatMap((p: string) => {
                                     const cIdx = p.indexOf(':');
                                     if (cIdx === -1) return [];
@@ -410,7 +441,15 @@ const App = () => {
                                                     type="text" 
                                                     className={`w-full p-3 rounded-xl border-none font-bold text-sm shadow-inner focus:ring-2 ${hasConflict ? 'bg-red-50 text-red-700 ring-red-100 focus:ring-red-200' : 'bg-slate-50 text-slate-600 focus:ring-blue-100'}`} 
                                                     value={assignment} 
-                                                    onChange={e => updateWeekData(currentWeek, { assignments: { ...assignments, [t.id]: e.target.value } })}
+                                                    onChange={e => {
+                                                        const newVal = e.target.value;
+                                                        const conflictClass = checkConflictBeforeInput(newVal, t.id);
+                                                        if (conflictClass) {
+                                                            alert(`Lớp ${conflictClass} đã được phân công cho giáo viên khác! Không thể nhập trùng.`);
+                                                            return; // Chặn nhập liệu
+                                                        }
+                                                        updateWeekData(currentWeek, { assignments: { ...assignments, [t.id]: newVal } });
+                                                    }}
                                                 />
                                                 {hasConflict && (
                                                     <div className="group relative">
@@ -471,7 +510,6 @@ const App = () => {
 
     // --- TAB THỰC DẠY (LŨY KẾ TUYỆT ĐỐI THEO DẢI TUẦN) ---
     const WeeklyTab = () => {
-        // Gom dữ liệu theo TÊN giáo viên để đảm bảo 1 giáo viên chỉ có 1 dòng duy nhất trong dải tuần
         const stats = useMemo(() => {
             const teacherAggregates: Record<string, { name: string, tkb: number, bu: number, tang: number }> = {};
             
@@ -480,14 +518,12 @@ const App = () => {
                 if (!record) continue;
 
                 record.teachers.forEach((t: any) => {
-                    // Dùng Tên đã trim làm khóa để gộp dòng
                     const key = t.name.trim();
                     if (!teacherAggregates[key]) {
                         teacherAggregates[key] = { name: t.name, tkb: 0, bu: 0, tang: 0 };
                     }
                     
                     const log = record.logs?.[t.id] || { bu: 0, tang: 0 };
-                    // Tiết TKB: lấy từ snapshot hoặc tính mới nếu chưa có snapshot
                     const currentTkb = (log.actual !== undefined && log.actual !== null) ? log.actual : getTKBPeriods(record.assignments[t.id] || "");
                     
                     teacherAggregates[key].tkb += currentTkb;
@@ -584,7 +620,7 @@ const App = () => {
                 if (!w) continue;
                 
                 w.teachers.forEach((t: any) => {
-                    const key = t.name.trim(); // Dùng Tên làm khóa gộp
+                    const key = t.name.trim();
                     if (!teacherStatsMap[key]) {
                         teacherStatsMap[key] = { 
                             name: t.name, 
@@ -670,7 +706,7 @@ const App = () => {
                 <div className="container mx-auto flex flex-col md:flex-row justify-between items-center gap-8">
                     <div className="flex items-center gap-5">
                         <div className="bg-blue-600 p-4 rounded-[1.5rem] text-white shadow-2xl rotate-3"><LayoutDashboard size={32}/></div>
-                        <h1 className="font-black text-3xl tracking-tighter text-slate-800 uppercase italic">THCS PRO <span className="text-blue-600 text-sm align-top italic font-black">v6.6</span></h1>
+                        <h1 className="font-black text-3xl tracking-tighter text-slate-800 uppercase italic">THCS PRO <span className="text-blue-600 text-sm align-top italic font-black">v6.7</span></h1>
                     </div>
                     <nav className="flex gap-2 bg-slate-100 p-2 rounded-[2.5rem] overflow-x-auto no-scrollbar">
                         {[
