@@ -6,7 +6,7 @@ import {
     Trash2, X, ChevronLeft, ChevronRight, 
     Plus, FileSpreadsheet, UserPlus, Book, ChevronDown,
     AlertCircle, Briefcase, CopyCheck, Square, CheckSquare,
-    CheckCircle2, AlertTriangle, Download, FileUp
+    CheckCircle2, AlertTriangle, Download, FileUp, Edit3, Check
 } from 'lucide-react';
 
 // --- CẤU HÌNH HỆ THỐNG ---
@@ -122,7 +122,7 @@ const App = () => {
     }, [data.subjectConfigs]);
 
     const getTeacherReduction = (teacherRoles: string[]) => {
-        return teacherRoles.reduce((sum, roleName) => {
+        return (teacherRoles || []).reduce((sum, roleName) => {
             const r = data.roles.find((x: any) => x.name === roleName);
             return sum + (r ? r.reduction : 0);
         }, 0);
@@ -227,6 +227,8 @@ const App = () => {
     const TeacherTab = () => {
         const [isAdding, setIsAdding] = useState(false);
         const [selectedIds, setSelectedIds] = useState<string[]>([]);
+        const [editingId, setEditingId] = useState<string | null>(null);
+        const [editState, setEditState] = useState<{name: string, roles: string[]}>({ name: '', roles: [] });
         const fileRef = useRef<HTMLInputElement>(null);
         const currentAssignments = data.weeklyAssignments[currentWeek] || {};
 
@@ -237,6 +239,31 @@ const App = () => {
 
         const toggleSelect = (id: string) => {
             setSelectedIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+        };
+
+        const startEditing = (teacher: any) => {
+            setEditingId(teacher.id);
+            setEditState({ name: teacher.name, roles: teacher.roles || [] });
+        };
+
+        const saveEdit = () => {
+            if (!editState.name.trim()) return alert("Tên không được để trống!");
+            const newTeachers = data.teachers.map((t: any) => 
+                t.id === editingId ? { ...t, name: editState.name, roles: editState.roles } : t
+            );
+            updateData({ teachers: newTeachers });
+            setEditingId(null);
+            setSyncStatus({ message: 'Đã cập nhật thông tin giáo viên', type: 'success' });
+            setTimeout(() => setSyncStatus({ message: '', type: '' }), 2000);
+        };
+
+        const toggleEditRole = (roleName: string) => {
+            setEditState(prev => ({
+                ...prev,
+                roles: prev.roles.includes(roleName) 
+                    ? prev.roles.filter(r => r !== roleName) 
+                    : [...prev.roles, roleName]
+            }));
         };
 
         const copySelective = () => {
@@ -257,7 +284,7 @@ const App = () => {
             updateData({ weeklyAssignments: { ...data.weeklyAssignments, [currentWeek]: newCurrent } });
             setSyncStatus({ message: `Đã sao chép phân công tuần ${currentWeek-1} cho ${count} giáo viên`, type: 'success' });
             setTimeout(() => setSyncStatus({ message: '', type: '' }), 3000);
-            setSelectedIds([]); // Reset selection after copy
+            setSelectedIds([]);
         };
 
         const exportTemplate = () => {
@@ -276,7 +303,6 @@ const App = () => {
             if (!file) return;
             const reader = new FileReader();
             reader.onload = (evt: any) => {
-                // Sử dụng XLSX từ thư viện CDN trong index.html
                 // @ts-ignore
                 const wb = XLSX.read(evt.target.result, {type:'binary'});
                 // @ts-ignore
@@ -294,7 +320,7 @@ const App = () => {
                         teacher = { 
                             id: (Date.now() + i).toString(), 
                             name, 
-                            roles: rolesRaw.split(',').map((s: string) => s.trim()).filter((s: string) => s) 
+                            roles: rolesRaw.toString().split(',').map((s: string) => s.trim()).filter((s: string) => s) 
                         };
                         newTeachers.push(teacher);
                     }
@@ -360,7 +386,7 @@ const App = () => {
                                 </button>
                             )}
                         </div>
-                        <div className="text-[10px] font-black text-slate-300 uppercase tracking-widest italic">Tích chọn để thao tác nhanh</div>
+                        <div className="text-[10px] font-black text-slate-300 uppercase tracking-widest italic">Tích chọn để thao tác nhanh | Bấm cây bút để sửa thông tin gốc</div>
                     </div>
                     <table className="w-full text-left">
                         <thead className="bg-slate-50 border-b text-[10px] font-black uppercase text-slate-400">
@@ -377,6 +403,8 @@ const App = () => {
                                 const assignment = currentAssignments[t.id] || "";
                                 const tkbPeriods = getTKBPeriods(assignment);
                                 const isSelected = selectedIds.includes(t.id);
+                                const isEditing = editingId === t.id;
+
                                 return (
                                     <tr key={t.id} className={`border-b group transition-all ${isSelected ? 'bg-blue-50/40' : 'hover:bg-slate-50/50'}`}>
                                         <td className="p-8 text-center">
@@ -385,12 +413,36 @@ const App = () => {
                                             </button>
                                         </td>
                                         <td className="p-8">
-                                            <div className="font-black text-slate-800 text-xl mb-1">{t.name}</div>
-                                            <div className="flex flex-wrap gap-1">
-                                                {t.roles.map((r: string) => (
-                                                    <span key={r} className="bg-white/80 text-blue-600 text-[8px] font-black px-2 py-0.5 rounded border border-blue-100 uppercase shadow-sm">{r}</span>
-                                                ))}
-                                            </div>
+                                            {isEditing ? (
+                                                <div className="space-y-2">
+                                                    <input 
+                                                        type="text" 
+                                                        className="w-full p-2 bg-white border border-blue-200 rounded-lg font-bold text-slate-800 outline-none focus:ring-2 focus:ring-blue-500"
+                                                        value={editState.name}
+                                                        onChange={e => setEditState({ ...editState, name: e.target.value })}
+                                                    />
+                                                    <div className="flex flex-wrap gap-1">
+                                                        {data.roles.map((r: any) => (
+                                                            <button 
+                                                                key={r.id} 
+                                                                onClick={() => toggleEditRole(r.name)}
+                                                                className={`text-[8px] font-black px-2 py-0.5 rounded border transition-all uppercase ${editState.roles.includes(r.name) ? 'bg-blue-600 text-white border-blue-600' : 'bg-slate-100 text-slate-400 border-slate-200'}`}
+                                                            >
+                                                                {r.name}
+                                                            </button>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            ) : (
+                                                <>
+                                                    <div className="font-black text-slate-800 text-xl mb-1">{t.name}</div>
+                                                    <div className="flex flex-wrap gap-1">
+                                                        {(t.roles || []).map((r: string) => (
+                                                            <span key={r} className="bg-white/80 text-blue-600 text-[8px] font-black px-2 py-0.5 rounded border border-blue-100 uppercase shadow-sm">{r}</span>
+                                                        ))}
+                                                    </div>
+                                                </>
+                                            )}
                                         </td>
                                         <td className="p-8">
                                             <input 
@@ -408,7 +460,19 @@ const App = () => {
                                         </td>
                                         <td className="p-8 text-center font-black text-slate-800 text-2xl">{tkbPeriods}</td>
                                         <td className="p-8 text-right">
-                                            <button onClick={() => updateData({ teachers: data.teachers.filter((x: any) => x.id !== t.id) })} className="text-slate-200 hover:text-red-500 p-2 transition-colors"><Trash2 size={20}/></button>
+                                            <div className="flex justify-end items-center gap-2">
+                                                {isEditing ? (
+                                                    <>
+                                                        <button onClick={saveEdit} className="text-emerald-500 hover:bg-emerald-50 p-2 rounded-xl transition-all" title="Lưu"><Check size={20}/></button>
+                                                        <button onClick={() => setEditingId(null)} className="text-slate-400 hover:bg-slate-50 p-2 rounded-xl transition-all" title="Hủy"><X size={20}/></button>
+                                                    </>
+                                                ) : (
+                                                    <>
+                                                        <button onClick={() => startEditing(t)} className="text-slate-200 hover:text-blue-500 p-2 transition-colors" title="Sửa thông tin"><Edit3 size={20}/></button>
+                                                        <button onClick={() => updateData({ teachers: data.teachers.filter((x: any) => x.id !== t.id) })} className="text-slate-200 hover:text-red-500 p-2 transition-colors" title="Xóa giáo viên"><Trash2 size={20}/></button>
+                                                    </>
+                                                )}
+                                            </div>
                                         </td>
                                     </tr>
                                 );
@@ -574,7 +638,7 @@ const App = () => {
                 <div className="container mx-auto flex flex-col md:flex-row justify-between items-center gap-8">
                     <div className="flex items-center gap-5">
                         <div className="bg-blue-600 p-4 rounded-[1.5rem] text-white shadow-2xl rotate-3"><LayoutDashboard size={32}/></div>
-                        <h1 className="font-black text-3xl tracking-tighter text-slate-800 uppercase italic">THCS PRO <span className="text-blue-600 text-sm align-top italic font-black">v5.3</span></h1>
+                        <h1 className="font-black text-3xl tracking-tighter text-slate-800 uppercase italic">THCS PRO <span className="text-blue-600 text-sm align-top italic font-black">v5.4</span></h1>
                     </div>
                     <nav className="flex gap-2 bg-slate-100 p-2 rounded-[2.5rem] overflow-x-auto no-scrollbar max-w-full">
                         {[
