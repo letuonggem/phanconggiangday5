@@ -6,13 +6,12 @@ import {
     Trash2, Edit3, Check, X, FileUp, ChevronLeft, ChevronRight, 
     RefreshCw, Cloud, CloudUpload, CloudDownload, Save, 
     CheckCircle2, AlertTriangle, ShieldCheck, TrendingUp, BookOpen, Download, Upload,
-    ClipboardCheck, Copy, Plus, FileSpreadsheet, UserPlus, Hash, Book
+    ClipboardCheck, Copy, Plus, FileSpreadsheet, UserPlus, Hash, Book, ChevronDown
 } from 'lucide-react';
 
 // --- CẤU HÌNH HỆ THỐNG ---
 const STORAGE_KEY = 'thcs_mgmt_v3_auto_calc';
 
-// Định mức môn học mặc định (THCS VN)
 const DEFAULT_SUBJECT_CONFIGS = [
     { name: 'Toán', periods: 4 },
     { name: 'Ngữ văn', periods: 4 },
@@ -35,7 +34,11 @@ const App = () => {
     const [syncStatus, setSyncStatus] = useState({ loading: false, message: '', type: '' });
     const [currentWeek, setCurrentWeek] = useState(1);
     const [isAddingDirect, setIsAddingDirect] = useState(false);
-    const [newTeacher, setNewTeacher] = useState({ name: '', assignments: '' });
+    
+    // State cho form thêm mới trực tiếp
+    const [newTeacherName, setNewTeacherName] = useState('');
+    const [selectedSubject, setSelectedSubject] = useState('');
+    const [selectedClasses, setSelectedClasses] = useState('');
 
     const [data, setData] = useState(() => {
         const saved = localStorage.getItem(STORAGE_KEY);
@@ -54,8 +57,10 @@ const App = () => {
 
     const updateData = (newData: any) => setData(prev => ({ ...prev, ...newData }));
 
+    // --- CHUẨN HÓA DỮ LIỆU ---
+    const normalizeClass = (cls: string) => cls.replace(/\s+/g, '').toUpperCase();
+
     // --- LOGIC TÍNH TIẾT TỰ ĐỘNG ---
-    // Cấu trúc chuỗi nhập: "Toán: 6A1, 6A2; Tin: 7A3"
     const calculatePeriods = (assignmentStr: string) => {
         if (!assignmentStr) return 0;
         let total = 0;
@@ -65,7 +70,8 @@ const App = () => {
             const [subjectPart, classesPart] = part.split(':');
             if (subjectPart && classesPart) {
                 const subjectName = subjectPart.trim();
-                const classCount = classesPart.split(',').filter(c => c.trim()).length;
+                const classes = classesPart.split(',').map(c => normalizeClass(c)).filter(c => c);
+                const classCount = classes.length;
                 
                 const config = data.subjectConfigs.find((s: any) => 
                     s.name.toLowerCase() === subjectName.toLowerCase()
@@ -76,6 +82,42 @@ const App = () => {
             }
         });
         return total;
+    };
+
+    // --- EXCEL LOGIC ---
+    const exportTemplate = () => {
+        const templateData = [
+            { "Họ tên": "Nguyễn Văn A", "Phân công (Môn: Lớp1, Lớp2)": "Toán: 6A1, 6A2; Tin: 7A3" },
+            { "Họ tên": "Trần Thị B", "Phân công (Môn: Lớp1, Lớp2)": "Ngữ văn: 8A1, 9A2" }
+        ];
+        const ws = (window as any).XLSX.utils.json_to_sheet(templateData);
+        const wb = (window as any).XLSX.utils.book_new();
+        (window as any).XLSX.utils.book_append_sheet(wb, ws, "Mau_Phan_Cong");
+        (window as any).XLSX.writeFile(wb, "Mau_Phan_Cong_Giang_Day.xlsx");
+    };
+
+    const handleImportExcel = (e: any) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = (evt: any) => {
+            try {
+                const wb = (window as any).XLSX.read(evt.target.result, {type:'binary'});
+                const rows = (window as any).XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
+                const news = rows.map((row: any, i: number) => ({
+                    id: (Date.now()+i).toString(),
+                    name: row['Họ tên'] || row['tengv'] || 'Giáo viên mới',
+                    assignments: row['Phân công (Môn: Lớp1, Lớp2)'] || row['Phân công lớp'] || '',
+                    roles: []
+                }));
+                updateData({ teachers: [...data.teachers, ...news] });
+                setSyncStatus({ loading: false, message: `Đã nhập ${news.length} GV`, type: 'success' });
+            } catch (err) {
+                setSyncStatus({ loading: false, message: 'Lỗi đọc file Excel', type: 'error' });
+            }
+            setTimeout(() => setSyncStatus({ loading: false, message: '', type: '' }), 3000);
+        };
+        reader.readAsBinaryString(file);
     };
 
     const pushToCloud = async () => {
@@ -99,92 +141,31 @@ const App = () => {
         setTimeout(() => setSyncStatus({ loading: false, message: '', type: '' }), 3000);
     };
 
-    // --- TAB CÀI ĐẶT (NÂNG CẤP) ---
-    const ConfigTab = () => (
-        <div className="p-8 animate-fadeIn">
-            <h2 className="text-2xl font-black mb-8 text-slate-800">Cấu hình Hệ thống</h2>
-            
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
-                {/* Phần 1: Cloud & Quota */}
-                <div className="space-y-6">
-                    <div className="bg-indigo-900 text-white p-8 rounded-[2.5rem] shadow-2xl">
-                        <div className="flex items-center gap-3 mb-4"><Cloud className="text-indigo-300" /><h3 className="font-bold uppercase text-xs tracking-widest">Đồng bộ Cloud</h3></div>
-                        <input type="text" placeholder="Dán link App Script..." className="w-full p-5 bg-white/10 border border-white/20 rounded-2xl text-sm mb-6 outline-none focus:bg-white/20" value={data.cloudUrl} onChange={e => updateData({cloudUrl: e.target.value})}/>
-                        <div className="grid grid-cols-2 gap-4">
-                            <button onClick={pushToCloud} className="bg-indigo-500 hover:bg-indigo-400 p-4 rounded-2xl font-bold flex items-center justify-center gap-3"><CloudUpload size={20}/> Gửi lên</button>
-                            <button onClick={fetchFromCloud} className="bg-white/10 hover:bg-white/20 p-4 rounded-2xl font-bold flex items-center justify-center gap-3"><CloudDownload size={20}/> Tải về</button>
-                        </div>
-                    </div>
-                    
-                    <div className="bg-white p-8 rounded-[2.5rem] border-2 border-slate-100 shadow-sm">
-                        <label className="block text-[10px] font-black text-slate-400 uppercase mb-2">Định mức giáo viên (Tiết/Tuần)</label>
-                        <input type="number" value={data.standardQuota} onChange={e => updateData({standardQuota: parseFloat(e.target.value)})} className="text-5xl font-black text-blue-600 outline-none w-full bg-transparent"/>
-                    </div>
-                </div>
-
-                {/* Phần 2: Định mức Môn học */}
-                <div className="bg-white p-8 rounded-[2.5rem] border-2 border-slate-100 shadow-sm overflow-hidden flex flex-col">
-                    <div className="flex items-center gap-3 mb-6">
-                        <div className="bg-emerald-100 text-emerald-600 p-2 rounded-xl"><Book size={18}/></div>
-                        <h3 className="font-black text-slate-700 uppercase text-xs tracking-widest">Định mức Tiết/Môn</h3>
-                    </div>
-                    <div className="overflow-y-auto max-h-[400px] pr-2 custom-scrollbar">
-                        {data.subjectConfigs.map((s: any, idx: number) => (
-                            <div key={idx} className="flex items-center justify-between py-3 border-b border-slate-50 group">
-                                <span className="font-bold text-slate-600">{s.name}</span>
-                                <div className="flex items-center gap-3">
-                                    <input type="number" step="0.5" className="w-16 p-2 text-center bg-slate-50 rounded-xl font-black text-blue-600 border-2 border-transparent focus:border-blue-200 outline-none transition-all" value={s.periods} 
-                                        onChange={e => {
-                                            const newConfigs = [...data.subjectConfigs];
-                                            newConfigs[idx].periods = parseFloat(e.target.value) || 0;
-                                            updateData({ subjectConfigs: newConfigs });
-                                        }}
-                                    />
-                                    <span className="text-[10px] font-black text-slate-300 uppercase">tiết/lớp</span>
-                                </div>
-                            </div>
-                        ))}
-                        <button onClick={() => updateData({ subjectConfigs: [...data.subjectConfigs, {name: 'Môn mới', periods: 1}] })} className="w-full mt-4 py-3 border-2 border-dashed border-slate-200 rounded-2xl text-slate-400 font-bold text-xs hover:border-blue-300 hover:text-blue-500 transition-all">+ THÊM MÔN HỌC</button>
-                    </div>
-                </div>
-            </div>
-        </div>
-    );
-
-    // --- TAB PHÂN CÔNG (GIAO DIỆN MỚI) ---
+    // --- TAB PHÂN CÔNG ---
     const TeacherTab = () => {
         const fileRef = useRef<HTMLInputElement>(null);
-        
+
         const addTeacherDirectly = () => {
-            if (!newTeacher.name) return alert("Nhập tên giáo viên");
+            if (!newTeacherName) return alert("Nhập tên giáo viên");
+            if (!selectedSubject || !selectedClasses) return alert("Vui lòng chọn môn và nhập lớp");
+            
+            // Chuẩn hóa lớp khi lưu
+            const normalizedClasses = selectedClasses.split(',').map(c => normalizeClass(c)).join(', ');
+            const assignment = `${selectedSubject}: ${normalizedClasses}`;
+
             const teacher = {
                 id: Date.now().toString(),
-                name: newTeacher.name,
-                assignments: newTeacher.assignments,
+                name: newTeacherName,
+                assignments: assignment,
                 roles: []
             };
             updateData({ teachers: [teacher, ...data.teachers] });
-            setNewTeacher({ name: '', assignments: '' });
+            
+            // Reset form
+            setNewTeacherName('');
+            setSelectedSubject('');
+            setSelectedClasses('');
             setIsAddingDirect(false);
-        };
-
-        const handleImportExcel = (e: any) => {
-            const file = e.target.files[0];
-            if (!file) return;
-            const reader = new FileReader();
-            reader.onload = (evt: any) => {
-                const wb = (window as any).XLSX.read(evt.target.result, {type:'binary'});
-                const rows = (window as any).XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
-                const news = rows.map((row: any, i: number) => ({
-                    id: (Date.now()+i).toString(),
-                    name: row['Họ tên'] || row['tengv'] || 'Giáo viên mới',
-                    assignments: row['Phân công lớp'] || row['Lớp dạy'] || '',
-                    roles: []
-                }));
-                updateData({ teachers: [...data.teachers, ...news] });
-                setSyncStatus({ loading: false, message: `Đã nhập ${news.length} GV`, type: 'success' });
-            };
-            reader.readAsBinaryString(file);
         };
 
         return (
@@ -193,39 +174,53 @@ const App = () => {
                     <div>
                         <h2 className="text-3xl font-black text-slate-800 tracking-tight">Quản lý Phân công</h2>
                         <p className="text-xs font-bold text-blue-500 uppercase tracking-widest mt-2 flex items-center gap-2">
-                            <Hash size={14}/> Hệ thống tự động tính tiết dạy từ danh sách lớp
+                            <Hash size={14}/> Hệ thống tự động chuẩn hóa: 6a1 → 6A1
                         </p>
                     </div>
                     
                     <div className="flex flex-wrap gap-3">
                         <button onClick={() => setIsAddingDirect(!isAddingDirect)} className="bg-blue-600 text-white px-8 py-4 rounded-[1.5rem] flex items-center gap-3 font-bold shadow-xl hover:bg-blue-700 transition-all active:scale-95">
-                            <UserPlus size={20}/> {isAddingDirect ? 'Đóng form' : 'Thêm giáo viên'}
+                            <UserPlus size={20}/> {isAddingDirect ? 'Đóng form' : 'Thêm GV'}
                         </button>
                         <div className="w-[2px] bg-slate-100 hidden md:block"></div>
+                        <button onClick={exportTemplate} className="bg-white border-2 border-slate-100 text-slate-600 px-6 py-4 rounded-[1.5rem] flex items-center gap-3 font-bold hover:bg-slate-50 transition-all">
+                            <Download size={20} className="text-blue-500"/> Mẫu Excel
+                        </button>
                         <input type="file" ref={fileRef} className="hidden" onChange={handleImportExcel} accept=".xlsx, .xls"/>
-                        <button onClick={() => fileRef.current?.click()} className="bg-white border-2 border-slate-100 text-slate-600 px-8 py-4 rounded-[1.5rem] flex items-center gap-3 font-bold hover:bg-slate-50 transition-all">
-                            <FileSpreadsheet size={20} className="text-emerald-500"/> Nhập Excel
+                        <button onClick={() => fileRef.current?.click()} className="bg-emerald-600 text-white px-8 py-4 rounded-[1.5rem] flex items-center gap-3 font-bold shadow-xl hover:bg-emerald-700 transition-all active:scale-95">
+                            <FileSpreadsheet size={20}/> Nhập Excel
                         </button>
                     </div>
                 </div>
 
                 {isAddingDirect && (
                     <div className="mb-10 bg-indigo-50 border-2 border-indigo-100 p-8 rounded-[3rem] animate-fadeIn">
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
                             <div>
-                                <label className="block text-[10px] font-black text-indigo-400 uppercase mb-2 ml-1">Họ và tên giáo viên</label>
-                                <input type="text" placeholder="VD: Nguyễn Văn A" className="w-full p-5 bg-white rounded-2xl border-none shadow-sm font-bold text-slate-700 focus:ring-2 focus:ring-indigo-500 outline-none" value={newTeacher.name} onChange={e => setNewTeacher({...newTeacher, name: e.target.value})}/>
+                                <label className="block text-[10px] font-black text-indigo-400 uppercase mb-2 ml-1">Họ tên giáo viên</label>
+                                <input type="text" placeholder="Nguyễn Văn A" className="w-full p-5 bg-white rounded-2xl border-none shadow-sm font-bold text-slate-700 focus:ring-2 focus:ring-indigo-500 outline-none" value={newTeacherName} onChange={e => setNewTeacherName(e.target.value)}/>
                             </div>
                             <div>
-                                <label className="block text-[10px] font-black text-indigo-400 uppercase mb-2 ml-1">Phân công (Cú pháp: Môn: Lớp1, Lớp2; ...)</label>
-                                <input type="text" placeholder="VD: Toán: 6A1, 6A2; Tin: 7A3" className="w-full p-5 bg-white rounded-2xl border-none shadow-sm font-bold text-slate-700 focus:ring-2 focus:ring-indigo-500 outline-none" value={newTeacher.assignments} onChange={e => setNewTeacher({...newTeacher, assignments: e.target.value})}/>
+                                <label className="block text-[10px] font-black text-indigo-400 uppercase mb-2 ml-1">Chọn môn học</label>
+                                <div className="relative">
+                                    <select className="w-full p-5 bg-white rounded-2xl border-none shadow-sm font-bold text-slate-700 focus:ring-2 focus:ring-indigo-500 outline-none appearance-none" value={selectedSubject} onChange={e => setSelectedSubject(e.target.value)}>
+                                        <option value="">-- Chọn môn --</option>
+                                        {data.subjectConfigs.map((s: any) => <option key={s.name} value={s.name}>{s.name} ({s.periods}t)</option>)}
+                                    </select>
+                                    <ChevronDown className="absolute right-5 top-1/2 -translate-y-1/2 text-slate-300 pointer-events-none" size={20}/>
+                                </div>
+                            </div>
+                            <div>
+                                <label className="block text-[10px] font-black text-indigo-400 uppercase mb-2 ml-1">Danh sách lớp (Cách nhau dấu phẩy)</label>
+                                <input type="text" placeholder="6a1, 6a2, 7a3" className="w-full p-5 bg-white rounded-2xl border-none shadow-sm font-bold text-slate-700 focus:ring-2 focus:ring-indigo-500 outline-none" value={selectedClasses} onChange={e => setSelectedClasses(e.target.value)}/>
                             </div>
                         </div>
                         <div className="flex justify-between items-center bg-white/50 p-4 rounded-2xl">
                             <div className="text-sm font-bold text-indigo-600">
-                                <span className="opacity-50">Dự kiến:</span> {calculatePeriods(newTeacher.assignments)} tiết/tuần
+                                <span className="opacity-50 uppercase text-[10px] block mb-1">Dự tính tiết dạy</span>
+                                {calculatePeriods(`${selectedSubject}: ${selectedClasses}`)} tiết/tuần
                             </div>
-                            <button onClick={addTeacherDirectly} className="bg-indigo-600 text-white px-10 py-3 rounded-xl font-black shadow-lg hover:bg-indigo-700 transition-all flex items-center gap-2"><Check size={18}/> XÁC NHẬN</button>
+                            <button onClick={addTeacherDirectly} className="bg-indigo-600 text-white px-10 py-3 rounded-xl font-black shadow-lg hover:bg-indigo-700 transition-all flex items-center gap-2"><Check size={18}/> HOÀN TẤT</button>
                         </div>
                     </div>
                 )}
@@ -234,8 +229,8 @@ const App = () => {
                     <table className="w-full text-left">
                         <thead className="bg-slate-50 border-b">
                             <tr>
-                                <th className="p-8 text-[10px] font-black uppercase text-slate-400">Giáo viên & Chi tiết Lớp dạy</th>
-                                <th className="p-8 text-center text-[10px] font-black uppercase text-slate-400">Tự động tính</th>
+                                <th className="p-8 text-[10px] font-black uppercase text-slate-400">Giáo viên & Chi tiết Phân công</th>
+                                <th className="p-8 text-center text-[10px] font-black uppercase text-slate-400">Tiết TKB</th>
                                 <th className="p-8"></th>
                             </tr>
                         </thead>
@@ -251,20 +246,22 @@ const App = () => {
                                                     const [m, l] = part.split(':');
                                                     if (!m || !l) return null;
                                                     return (
-                                                        <span key={i} className="bg-white border border-slate-100 px-3 py-1 rounded-lg text-[10px] font-bold text-slate-500 shadow-sm">
-                                                            <b className="text-blue-600">{m.trim()}</b>: {l.trim()}
+                                                        <span key={i} className="bg-white border border-slate-100 px-3 py-1.5 rounded-xl text-[10px] font-bold text-slate-500 shadow-sm flex items-center gap-2">
+                                                            <b className="text-blue-600 uppercase">{m.trim()}</b>
+                                                            <span className="w-1 h-1 bg-slate-200 rounded-full"></span>
+                                                            <span className="text-slate-700 font-black">{l.split(',').map(normalizeClass).join(', ')}</span>
                                                         </span>
                                                     );
                                                 })}
                                                 <button onClick={() => {
-                                                    const newStr = prompt("Sửa phân công cho " + t.name, t.assignments);
+                                                    const newStr = prompt("Sửa phân công cho " + t.name + "\n(Cấu pháp: Môn: Lớp1, Lớp2; ...)", t.assignments);
                                                     if (newStr !== null) updateData({teachers: data.teachers.map((x: any) => x.id === t.id ? {...x, assignments: newStr} : x)});
                                                 }} className="text-blue-400 hover:text-blue-600 p-1 opacity-0 group-hover:opacity-100 transition-all"><Edit3 size={14}/></button>
                                             </div>
                                         </td>
                                         <td className="p-8 text-center">
                                             <div className="inline-block px-6 py-3 bg-blue-50 text-blue-700 rounded-2xl font-black text-2xl shadow-inner">
-                                                {total} <span className="text-[10px] uppercase opacity-40 ml-1">tiết</span>
+                                                {total} <span className="text-[10px] uppercase opacity-40 ml-1">t/tuần</span>
                                             </div>
                                         </td>
                                         <td className="p-8 text-right">
@@ -280,7 +277,52 @@ const App = () => {
         );
     };
 
-    // --- CÁC TAB KHÁC (TƯƠNG TỰ BẢN TRƯỚC) ---
+    // --- TAB CÀI ĐẶT ---
+    const ConfigTab = () => (
+        <div className="p-8 animate-fadeIn">
+            <h2 className="text-2xl font-black mb-8 text-slate-800">Cấu hình Hệ thống</h2>
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
+                <div className="space-y-6">
+                    <div className="bg-indigo-900 text-white p-8 rounded-[2.5rem] shadow-2xl">
+                        <div className="flex items-center gap-3 mb-4"><Cloud className="text-indigo-300" /><h3 className="font-bold uppercase text-xs tracking-widest">Đồng bộ Cloud</h3></div>
+                        <input type="text" placeholder="Link App Script..." className="w-full p-5 bg-white/10 border border-white/20 rounded-2xl text-sm mb-6 outline-none focus:bg-white/20" value={data.cloudUrl} onChange={e => updateData({cloudUrl: e.target.value})}/>
+                        <div className="grid grid-cols-2 gap-4">
+                            <button onClick={pushToCloud} className="bg-indigo-500 hover:bg-indigo-400 p-4 rounded-2xl font-bold flex items-center justify-center gap-3"><CloudUpload size={20}/> Gửi lên</button>
+                            <button onClick={fetchFromCloud} className="bg-white/10 hover:bg-white/20 p-4 rounded-2xl font-bold flex items-center justify-center gap-3"><CloudDownload size={20}/> Tải về</button>
+                        </div>
+                    </div>
+                    <div className="bg-white p-8 rounded-[2.5rem] border-2 border-slate-100 shadow-sm">
+                        <label className="block text-[10px] font-black text-slate-400 uppercase mb-2">Định mức GV chuẩn (Tiết/Tuần)</label>
+                        <input type="number" value={data.standardQuota} onChange={e => updateData({standardQuota: parseFloat(e.target.value)})} className="text-5xl font-black text-blue-600 outline-none w-full bg-transparent"/>
+                    </div>
+                </div>
+                <div className="bg-white p-8 rounded-[2.5rem] border-2 border-slate-100 shadow-sm flex flex-col">
+                    <div className="flex items-center gap-3 mb-6">
+                        <div className="bg-emerald-100 text-emerald-600 p-2 rounded-xl"><Book size={18}/></div>
+                        <h3 className="font-black text-slate-700 uppercase text-xs tracking-widest">Định mức Tiết/Môn</h3>
+                    </div>
+                    <div className="overflow-y-auto max-h-[400px] pr-2 custom-scrollbar">
+                        {data.subjectConfigs.map((s: any, idx: number) => (
+                            <div key={idx} className="flex items-center justify-between py-3 border-b border-slate-50 group">
+                                <span className="font-bold text-slate-600">{s.name}</span>
+                                <div className="flex items-center gap-3">
+                                    <input type="number" step="0.5" className="w-16 p-2 text-center bg-slate-50 rounded-xl font-black text-blue-600 border-2 border-transparent focus:border-blue-200 outline-none transition-all" value={s.periods} onChange={e => {
+                                        const newConfigs = [...data.subjectConfigs];
+                                        newConfigs[idx].periods = parseFloat(e.target.value) || 0;
+                                        updateData({ subjectConfigs: newConfigs });
+                                    }}/>
+                                    <span className="text-[10px] font-black text-slate-300 uppercase">tiết/lớp</span>
+                                </div>
+                            </div>
+                        ))}
+                        <button onClick={() => updateData({ subjectConfigs: [...data.subjectConfigs, {name: 'Môn mới', periods: 1}] })} className="w-full mt-4 py-3 border-2 border-dashed border-slate-200 rounded-2xl text-slate-400 font-bold text-xs hover:border-blue-300 hover:text-blue-500 transition-all">+ THÊM MÔN HỌC</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+
+    // --- TAB TIẾT DẠY ---
     const WeeklyTab = () => {
         const [tempLogs, setTempLogs] = useState(data.weeklyData[currentWeek] || {});
         const save = () => {
@@ -369,7 +411,7 @@ const App = () => {
             <div className="max-w-xl mx-auto">
                 <div className="w-24 h-24 bg-blue-100 text-blue-600 rounded-[2.5rem] flex items-center justify-center mx-auto mb-8 shadow-inner"><ShieldCheck size={48}/></div>
                 <h2 className="text-4xl font-black text-slate-800 mb-4 tracking-tight">An toàn Dữ liệu</h2>
-                <p className="text-slate-400 text-sm mb-12 leading-relaxed">Dữ liệu được lưu cục bộ trên trình duyệt. Bạn nên tải file sao lưu định kỳ để không bị mất dữ liệu khi dọn dẹp máy tính.</p>
+                <p className="text-slate-400 text-sm mb-12 leading-relaxed">Dữ liệu được lưu cục bộ trên trình duyệt. Bạn nên tải file sao lưu định kỳ.</p>
                 <div className="flex flex-col sm:flex-row gap-4 justify-center">
                     <button onClick={() => {
                         const blob = new Blob([JSON.stringify(data)], { type: 'application/json' });
@@ -389,7 +431,7 @@ const App = () => {
                     <div className="flex items-center gap-4">
                         <div className="bg-blue-600 p-3 rounded-2xl text-white shadow-xl rotate-3"><LayoutDashboard size={28}/></div>
                         <div>
-                            <h1 className="font-black text-2xl leading-none tracking-tighter">THCS PRO <span className="text-blue-600 text-xs align-top">v3.0</span></h1>
+                            <h1 className="font-black text-2xl leading-none tracking-tighter">THCS PRO <span className="text-blue-600 text-xs align-top">v3.1</span></h1>
                             <span className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mt-1 block">Hệ thống Quản lý Chuyên môn</span>
                         </div>
                     </div>
