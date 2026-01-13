@@ -104,11 +104,12 @@ const App = () => {
         }, 0);
     };
 
-    // --- TAB PHÂN CÔNG (LÀM VIỆC THEO TUẦN + NHẬP BÙ/TĂNG) ---
+    // --- TAB PHÂN CÔNG ---
     const TeacherTab = () => {
         const [isAdding, setIsAdding] = useState(false);
         const [editingId, setEditingId] = useState<string | null>(null);
         const [editState, setEditState] = useState<{name: string, roles: string[]}>({ name: '', roles: [] });
+        const [newTeacherRoles, setNewTeacherRoles] = useState<string[]>([]);
         const fileRef = useRef<HTMLInputElement>(null);
         
         const weekData = getWeekData(currentWeek);
@@ -117,6 +118,17 @@ const App = () => {
         const startEditing = (teacher: any) => {
             setEditingId(teacher.id);
             setEditState({ name: teacher.name, roles: teacher.roles || [] });
+        };
+
+        const toggleEditRole = (roleName: string) => {
+            setEditState(prev => ({
+                ...prev,
+                roles: prev.roles.includes(roleName) ? prev.roles.filter(r => r !== roleName) : [...prev.roles, roleName]
+            }));
+        };
+
+        const toggleNewRole = (roleName: string) => {
+            setNewTeacherRoles(prev => prev.includes(roleName) ? prev.filter(r => r !== roleName) : [...prev, roleName]);
         };
 
         const saveEdit = () => {
@@ -128,13 +140,6 @@ const App = () => {
             setEditingId(null);
             setSyncStatus({ message: 'Đã cập nhật GV tại tuần ' + currentWeek, type: 'success' });
             setTimeout(() => setSyncStatus({ message: '', type: '' }), 2000);
-        };
-
-        const toggleEditRole = (roleName: string) => {
-            setEditState(prev => ({
-                ...prev,
-                roles: prev.roles.includes(roleName) ? prev.roles.filter(r => r !== roleName) : [...prev.roles, roleName]
-            }));
         };
 
         const copyFromPrevious = () => {
@@ -234,25 +239,47 @@ const App = () => {
 
                 {isAdding && (
                     <div className="mb-10 bg-blue-50/50 border-2 border-blue-100 p-8 rounded-[3.5rem] animate-fadeIn shadow-sm">
-                        <div className="grid grid-cols-1 xl:grid-cols-5 gap-6 items-center">
-                            <input type="text" placeholder="Họ tên GV" className="w-full p-4 rounded-2xl border-none shadow-sm font-bold" id="new-name"/>
-                            <select className="w-full p-4 rounded-2xl border-none shadow-sm font-bold" id="new-sub">
-                                <option value="">Môn dạy</option>
-                                {data.subjectConfigs.map((s: any) => <option key={s.name} value={s.name}>{s.name}</option>)}
-                            </select>
-                            <input type="text" placeholder="Lớp dạy (6A1, 7B2...)" className="w-full p-4 rounded-2xl border-none shadow-sm font-bold" id="new-cls"/>
-                            <button onClick={() => {
-                                const name = (document.getElementById('new-name') as HTMLInputElement).value;
-                                const sub = (document.getElementById('new-sub') as HTMLSelectElement).value;
-                                const cls = (document.getElementById('new-cls') as HTMLInputElement).value;
-                                if (!name || !sub || !cls) return alert("Vui lòng nhập đủ thông tin!");
-                                const tId = Date.now().toString();
-                                updateWeekData(currentWeek, {
-                                    teachers: [{ id: tId, name, roles: [] }, ...teachers],
-                                    assignments: { ...assignments, [tId]: `${sub}: ${normalizeClassStr(cls)}` }
-                                });
-                                setIsAdding(false);
-                            }} className="bg-blue-600 text-white p-4 rounded-2xl font-black flex items-center justify-center gap-2"><Plus/> THÊM NGAY</button>
+                        <div className="grid grid-cols-1 xl:grid-cols-5 gap-6 items-start">
+                            <div className="space-y-1">
+                                <label className="text-[10px] font-black text-blue-500 uppercase ml-2 tracking-widest">Họ tên GV</label>
+                                <input type="text" placeholder="Nguyễn Văn A" className="w-full p-4 rounded-2xl border-none shadow-sm font-bold" id="new-name"/>
+                            </div>
+                            <div className="space-y-1">
+                                <label className="text-[10px] font-black text-blue-500 uppercase ml-2 tracking-widest">Môn chính</label>
+                                <select className="w-full p-4 rounded-2xl border-none shadow-sm font-bold appearance-none" id="new-sub">
+                                    <option value="">Môn dạy</option>
+                                    {data.subjectConfigs.map((s: any) => <option key={s.name} value={s.name}>{s.name}</option>)}
+                                </select>
+                            </div>
+                            <div className="space-y-1">
+                                <label className="text-[10px] font-black text-blue-500 uppercase ml-2 tracking-widest">Lớp dạy</label>
+                                <input type="text" placeholder="6A1, 7B2..." className="w-full p-4 rounded-2xl border-none shadow-sm font-bold" id="new-cls"/>
+                            </div>
+                            <div className="space-y-1">
+                                <label className="text-[10px] font-black text-blue-500 uppercase ml-2 tracking-widest">Chức vụ kiêm nhiệm</label>
+                                <div className="flex flex-wrap gap-1 max-h-24 overflow-y-auto p-2 bg-white rounded-2xl shadow-sm">
+                                    {data.roles.map((r: any) => (
+                                        <button key={r.id} onClick={() => toggleNewRole(r.name)} className={`text-[9px] px-2 py-1 rounded-lg border font-bold transition-all ${newTeacherRoles.includes(r.name) ? 'bg-blue-600 text-white border-blue-600' : 'bg-slate-50 text-slate-400 border-slate-200'}`}>
+                                            {r.name}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+                            <div className="pt-5">
+                                <button onClick={() => {
+                                    const name = (document.getElementById('new-name') as HTMLInputElement).value;
+                                    const sub = (document.getElementById('new-sub') as HTMLSelectElement).value;
+                                    const cls = (document.getElementById('new-cls') as HTMLInputElement).value;
+                                    if (!name || !sub || !cls) return alert("Vui lòng nhập đủ thông tin!");
+                                    const tId = Date.now().toString();
+                                    updateWeekData(currentWeek, {
+                                        teachers: [{ id: tId, name, roles: newTeacherRoles }, ...teachers],
+                                        assignments: { ...assignments, [tId]: `${sub}: ${normalizeClassStr(cls)}` }
+                                    });
+                                    setIsAdding(false);
+                                    setNewTeacherRoles([]);
+                                }} className="w-full bg-blue-600 text-white p-4 rounded-2xl font-black flex items-center justify-center gap-2 shadow-lg hover:bg-blue-700 transition-all"><Plus/> THÊM NGAY</button>
+                            </div>
                         </div>
                     </div>
                 )}
@@ -261,7 +288,7 @@ const App = () => {
                     <table className="w-full text-left">
                         <thead className="bg-slate-50 border-b text-[10px] font-black uppercase text-slate-400">
                             <tr>
-                                <th className="p-8">Giáo viên</th>
+                                <th className="p-8">Giáo viên & Chức vụ</th>
                                 <th className="p-8">Phân công TKB</th>
                                 <th className="p-8 text-center">Tiết TKB</th>
                                 <th className="p-8 text-center text-orange-600">Dạy bù</th>
@@ -279,28 +306,46 @@ const App = () => {
                                     <tr key={t.id} className="border-b hover:bg-slate-50/50 transition-all">
                                         <td className="p-8">
                                             {isEditing ? (
-                                                <input className="font-bold border rounded p-1" value={editState.name} onChange={e => setEditState({...editState, name: e.target.value})}/>
+                                                <div className="space-y-3">
+                                                    <input className="font-bold border-2 border-blue-100 rounded-xl p-2 w-full outline-none focus:border-blue-500" value={editState.name} onChange={e => setEditState({...editState, name: e.target.value})}/>
+                                                    <div className="flex flex-wrap gap-1">
+                                                        {data.roles.map((r: any) => (
+                                                            <button key={r.id} onClick={() => toggleEditRole(r.name)} className={`text-[8px] px-2 py-0.5 rounded border font-bold ${editState.roles.includes(r.name) ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-400'}`}>
+                                                                {r.name}
+                                                            </button>
+                                                        ))}
+                                                    </div>
+                                                </div>
                                             ) : (
-                                                <div className="font-black text-slate-800 text-xl">{t.name}</div>
+                                                <div className="space-y-1">
+                                                    <div className="font-black text-slate-800 text-xl">{t.name}</div>
+                                                    <div className="flex flex-wrap gap-1">
+                                                        {(t.roles || []).map((r: string) => (
+                                                            <span key={r} className="text-[8px] font-black uppercase bg-blue-50 text-blue-500 px-1.5 py-0.5 rounded-md border border-blue-100">
+                                                                {r}
+                                                            </span>
+                                                        ))}
+                                                    </div>
+                                                </div>
                                             )}
                                         </td>
                                         <td className="p-8">
-                                            <input type="text" className="w-full p-2 bg-slate-50 rounded-xl border-none font-bold text-slate-600 text-sm" value={assignment} onChange={e => updateWeekData(currentWeek, { assignments: { ...assignments, [t.id]: e.target.value } })}/>
+                                            <input type="text" className="w-full p-2 bg-slate-50 rounded-xl border-none font-bold text-slate-600 text-sm shadow-inner" value={assignment} onChange={e => updateWeekData(currentWeek, { assignments: { ...assignments, [t.id]: e.target.value } })}/>
                                         </td>
                                         <td className="p-8 text-center font-black text-slate-800 text-2xl">{tkbCount}</td>
                                         <td className="p-8">
-                                            <input type="number" step="0.5" className="w-20 mx-auto block text-center p-2 bg-orange-50 border-2 border-orange-100 rounded-xl font-black text-orange-700" value={log.bu || 0} onChange={e => updateLog(t.id, 'bu', parseFloat(e.target.value) || 0)}/>
+                                            <input type="number" step="0.5" className="w-20 mx-auto block text-center p-2 bg-orange-50 border-2 border-orange-100 rounded-xl font-black text-orange-700 outline-none" value={log.bu || 0} onChange={e => updateLog(t.id, 'bu', parseFloat(e.target.value) || 0)}/>
                                         </td>
                                         <td className="p-8">
-                                            <input type="number" step="0.5" className="w-20 mx-auto block text-center p-2 bg-orange-50 border-2 border-orange-100 rounded-xl font-black text-orange-700" value={log.tang || 0} onChange={e => updateLog(t.id, 'tang', parseFloat(e.target.value) || 0)}/>
+                                            <input type="number" step="0.5" className="w-20 mx-auto block text-center p-2 bg-orange-50 border-2 border-orange-100 rounded-xl font-black text-orange-700 outline-none" value={log.tang || 0} onChange={e => updateLog(t.id, 'tang', parseFloat(e.target.value) || 0)}/>
                                         </td>
                                         <td className="p-8 text-right">
                                             <div className="flex justify-end gap-2">
                                                 {isEditing ? (
-                                                    <button onClick={saveEdit} className="text-emerald-500 p-2"><Check/></button>
+                                                    <button onClick={saveEdit} className="text-emerald-500 p-2 hover:bg-emerald-50 rounded-xl transition-all"><Check/></button>
                                                 ) : (
                                                     <>
-                                                        <button onClick={() => startEditing(t)} className="text-slate-200 hover:text-blue-500 p-2"><Edit3 size={18}/></button>
+                                                        <button onClick={() => startEditing(t)} className="text-slate-200 hover:text-blue-500 p-2 hover:bg-blue-50 rounded-xl transition-all"><Edit3 size={18}/></button>
                                                         <button onClick={() => {
                                                             if(confirm("Xóa GV khỏi tuần " + currentWeek + "?")) {
                                                                 updateWeekData(currentWeek, { 
@@ -309,7 +354,7 @@ const App = () => {
                                                                     logs: { ...logs, [t.id]: undefined }
                                                                 });
                                                             }
-                                                        }} className="text-slate-200 hover:text-red-500 p-2"><Trash2 size={18}/></button>
+                                                        }} className="text-slate-200 hover:text-red-500 p-2 hover:bg-red-50 rounded-xl transition-all"><Trash2 size={18}/></button>
                                                     </>
                                                 )}
                                             </div>
@@ -324,7 +369,7 @@ const App = () => {
         );
     };
 
-    // --- TAB THỰC DẠY (DẢI TUẦN) ---
+    // --- TAB THỰC DẠY ---
     const WeeklyTab = () => {
         const stats = useMemo(() => {
             const allTeacherIds = new Set<string>();
@@ -334,10 +379,7 @@ const App = () => {
             }
 
             return Array.from(allTeacherIds).map(id => {
-                let totalTKB = 0;
-                let totalBu = 0;
-                let totalTang = 0;
-                let name = "N/A";
+                let totalTKB = 0, totalBu = 0, totalTang = 0, name = "N/A";
 
                 for (let i = startRange; i <= endRange; i++) {
                     const w = data.weeklyRecords[i];
@@ -366,14 +408,14 @@ const App = () => {
                     <div className="flex items-center gap-6 bg-white border-2 border-slate-100 p-6 rounded-[3rem] shadow-sm">
                         <div className="flex items-center gap-4">
                             <label className="text-[10px] font-black uppercase text-blue-500 tracking-widest">Từ tuần</label>
-                            <input type="number" value={startRange} onChange={e => setStartRange(Math.max(1, parseInt(e.target.value) || 1))} className="w-16 p-3 bg-slate-50 rounded-xl font-black text-center text-xl"/>
+                            <input type="number" value={startRange} onChange={e => setStartRange(Math.max(1, parseInt(e.target.value) || 1))} className="w-16 p-3 bg-slate-50 rounded-xl font-black text-center text-xl outline-none focus:ring-2 focus:ring-blue-500"/>
                         </div>
                         <ChevronRight className="text-slate-300" />
                         <div className="flex items-center gap-4">
                             <label className="text-[10px] font-black uppercase text-blue-500 tracking-widest">Đến tuần</label>
-                            <input type="number" value={endRange} onChange={e => setEndRange(Math.max(startRange, parseInt(e.target.value) || 1))} className="w-16 p-3 bg-slate-50 rounded-xl font-black text-center text-xl"/>
+                            <input type="number" value={endRange} onChange={e => setEndRange(Math.max(startRange, parseInt(e.target.value) || 1))} className="w-16 p-3 bg-slate-50 rounded-xl font-black text-center text-xl outline-none focus:ring-2 focus:ring-blue-500"/>
                         </div>
-                        <div className="ml-6 px-6 py-2 bg-blue-600 text-white rounded-2xl font-black text-sm uppercase">
+                        <div className="ml-6 px-6 py-2 bg-blue-600 text-white rounded-2xl font-black text-sm uppercase shadow-lg">
                             Tổng {endRange - startRange + 1} tuần
                         </div>
                     </div>
@@ -409,7 +451,7 @@ const App = () => {
         );
     };
 
-    // --- TAB BÁO CÁO (CHUYÊN SÂU) ---
+    // --- TAB BÁO CÁO ---
     const ReportTab = () => {
         const [reportWeeks, setReportWeeks] = useState(4);
         
@@ -454,7 +496,7 @@ const App = () => {
                     </div>
                     <div className="bg-slate-100 p-3 rounded-[2rem] flex items-center gap-4">
                         <span className="text-[10px] font-black text-slate-400 ml-4 uppercase">Xem đến tuần:</span>
-                        <input type="number" value={reportWeeks} onChange={e => setReportWeeks(parseInt(e.target.value) || 1)} className="w-20 p-3 bg-white rounded-xl text-center font-black text-blue-600"/>
+                        <input type="number" value={reportWeeks} onChange={e => setReportWeeks(parseInt(e.target.value) || 1)} className="w-20 p-3 bg-white rounded-xl text-center font-black text-blue-600 outline-none focus:ring-2 focus:ring-blue-500 shadow-sm border-none"/>
                     </div>
                 </div>
                 <div className="bg-white rounded-[3.5rem] border-2 border-slate-50 overflow-hidden shadow-sm">
@@ -493,7 +535,7 @@ const App = () => {
                 <div className="container mx-auto flex flex-col md:flex-row justify-between items-center gap-8">
                     <div className="flex items-center gap-5">
                         <div className="bg-blue-600 p-4 rounded-[1.5rem] text-white shadow-2xl rotate-3"><LayoutDashboard size={32}/></div>
-                        <h1 className="font-black text-3xl tracking-tighter text-slate-800 uppercase italic">THCS PRO <span className="text-blue-600 text-sm align-top italic font-black">v6.2</span></h1>
+                        <h1 className="font-black text-3xl tracking-tighter text-slate-800 uppercase italic">THCS PRO <span className="text-blue-600 text-sm align-top italic font-black">v6.3</span></h1>
                     </div>
                     <nav className="flex gap-2 bg-slate-100 p-2 rounded-[2.5rem] overflow-x-auto no-scrollbar">
                         {[
@@ -524,8 +566,17 @@ const App = () => {
                                     {data.subjectConfigs.map((s: any, i: number) => (
                                         <div key={i} className="flex justify-between items-center py-4 border-b border-slate-100 last:border-0">
                                             <span className="font-black text-slate-600 uppercase text-[11px]">{s.name}</span>
-                                            <input type="number" step="0.5" className="w-20 p-3 bg-white rounded-xl text-center font-black text-blue-600 border border-slate-200" value={s.periods} onChange={e => {
+                                            <input type="number" step="0.5" className="w-20 p-3 bg-white rounded-xl text-center font-black text-blue-600 border border-slate-200 outline-none" value={s.periods} onChange={e => {
                                                 const nc = [...data.subjectConfigs]; nc[i].periods = parseFloat(e.target.value) || 0; updateData({subjectConfigs: nc});
+                                            }}/>
+                                        </div>
+                                    ))}
+                                    <h3 className="font-black text-slate-700 uppercase text-xs mt-8 mb-6 tracking-widest flex items-center gap-3"><Users size={18}/> Chức vụ kiêm nhiệm</h3>
+                                    {data.roles.map((r: any, i: number) => (
+                                        <div key={r.id} className="flex justify-between items-center py-4 border-b border-slate-100 last:border-0">
+                                            <span className="font-black text-slate-600 uppercase text-[11px]">{r.name}</span>
+                                            <input type="number" className="w-20 p-3 bg-white rounded-xl text-center font-black text-blue-600 border border-slate-200 outline-none" value={r.reduction} onChange={e => {
+                                                const nr = [...data.roles]; nr[i].reduction = parseInt(e.target.value) || 0; updateData({roles: nr});
                                             }}/>
                                         </div>
                                     ))}
@@ -539,7 +590,7 @@ const App = () => {
                 </div>
             </main>
             {syncStatus.message && (
-                <div className="fixed bottom-12 left-1/2 -translate-x-1/2 bg-slate-900 text-white px-12 py-6 rounded-[3rem] shadow-2xl flex items-center gap-4 animate-fadeIn font-black text-sm z-[100] border-2 border-white/10">
+                <div className="fixed bottom-12 left-1/2 -translate-x-1/2 bg-slate-900 text-white px-12 py-6 rounded-[3rem] shadow-2xl flex items-center gap-4 animate-fadeIn font-black text-sm z-[100] border-2 border-white/10 shadow-blue-500/20">
                     <CheckCircle2 size={24} className="text-emerald-400" />
                     {syncStatus.message}
                 </div>
