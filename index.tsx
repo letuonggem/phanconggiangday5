@@ -11,7 +11,7 @@ import {
 } from 'lucide-react';
 
 // --- CẤU HÌNH HỆ THỐNG ---
-const STORAGE_KEY = 'thcs_teaching_mgmt_v6_4_final';
+const STORAGE_KEY = 'thcs_teaching_mgmt_v6_5_final';
 
 const DEFAULT_SUBJECT_CONFIGS = [
     { name: 'Toán', periods: 4 }, { name: 'Ngữ văn', periods: 4 },
@@ -371,7 +371,7 @@ const App = () => {
 
     // --- TAB THỰC DẠY (LŨY KẾ THEO DẢI TUẦN) ---
     const WeeklyTab = () => {
-        // Gom dữ liệu theo giáo viên trong dải tuần
+        // Gom dữ liệu theo TÊN giáo viên để gộp dòng trong dải tuần
         const stats = useMemo(() => {
             const teacherAggregates: Record<string, { name: string, tkb: number, bu: number, tang: number }> = {};
             
@@ -380,17 +380,18 @@ const App = () => {
                 if (!record) continue;
 
                 record.teachers.forEach((t: any) => {
-                    if (!teacherAggregates[t.id]) {
-                        teacherAggregates[t.id] = { name: t.name, tkb: 0, bu: 0, tang: 0 };
+                    // Dùng Tên làm khóa để gộp dòng (Trường hợp 1 người có ID khác nhau giữa các tuần)
+                    const key = t.name.trim();
+                    if (!teacherAggregates[key]) {
+                        teacherAggregates[key] = { name: t.name, tkb: 0, bu: 0, tang: 0 };
                     }
                     
                     const log = record.logs?.[t.id] || { bu: 0, tang: 0 };
-                    // Nếu đã có snapshot tiết thực dạy TKB thì dùng, không thì tính từ chuỗi phân công
                     const currentTkb = (log.actual !== undefined) ? log.actual : getTKBPeriods(record.assignments[t.id] || "");
                     
-                    teacherAggregates[t.id].tkb += currentTkb;
-                    teacherAggregates[t.id].bu += (log.bu || 0);
-                    teacherAggregates[t.id].tang += (log.tang || 0);
+                    teacherAggregates[key].tkb += currentTkb;
+                    teacherAggregates[key].bu += (log.bu || 0);
+                    teacherAggregates[key].tang += (log.tang || 0);
                 });
             }
 
@@ -415,8 +416,8 @@ const App = () => {
                         </div>
                     </div>
                     <div className="text-right">
-                        <h2 className="text-3xl font-black text-slate-800 tracking-tighter uppercase italic">Tổng hợp thực dạy</h2>
-                        <p className="text-slate-400 font-bold text-xs uppercase tracking-widest mt-1">Dữ liệu lũy kế toàn trường</p>
+                        <h2 className="text-3xl font-black text-slate-800 tracking-tighter uppercase italic">Tổng hợp Thực dạy</h2>
+                        <p className="text-slate-400 font-bold text-xs uppercase tracking-widest mt-1">Dữ liệu gộp dòng & lũy kế</p>
                     </div>
                 </div>
 
@@ -426,9 +427,9 @@ const App = () => {
                             <tr>
                                 <th className="p-10 w-1/4">Giáo viên</th>
                                 <th className="p-10 text-center">Tổng Tiết TKB</th>
-                                <th className="p-10 text-center text-orange-600">Tổng Bù</th>
+                                <th className="p-10 text-center text-orange-600">Tổng Dạy Bù</th>
                                 <th className="p-10 text-center text-orange-600">Tổng Tăng tiết</th>
-                                <th className="p-10 text-center bg-blue-50/50 text-blue-600">Tổng Thực dạy</th>
+                                <th className="p-10 text-center bg-blue-50/50 text-blue-700">Tổng Thực dạy</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -438,7 +439,7 @@ const App = () => {
                                     <tr key={i} className="border-b hover:bg-slate-50/50 transition-all">
                                         <td className="p-10">
                                             <div className="font-black text-slate-700 text-2xl">{s.name}</div>
-                                            <div className="text-[10px] font-bold text-slate-300 uppercase mt-1 tracking-widest">Dữ liệu lũy kế</div>
+                                            <div className="text-[10px] font-bold text-slate-300 uppercase mt-1 tracking-widest">Gộp {endRange - startRange + 1} tuần</div>
                                         </td>
                                         <td className="p-10 text-center font-black text-slate-400 text-3xl">
                                             {s.tkb % 1 === 0 ? s.tkb : s.tkb.toFixed(1)}
@@ -462,7 +463,7 @@ const App = () => {
                     {stats.length === 0 && (
                         <div className="p-32 text-center">
                             <RefreshCcw size={64} className="mx-auto text-slate-100 mb-6 animate-spin-slow" />
-                            <p className="font-black text-slate-300 uppercase tracking-widest text-sm italic">Không có dữ liệu trong dải tuần đã chọn</p>
+                            <p className="font-black text-slate-300 uppercase tracking-widest text-sm italic">Không có dữ liệu trong dải tuần {startRange} - {endRange}</p>
                         </div>
                     )}
                 </div>
@@ -482,8 +483,9 @@ const App = () => {
                 if (!w) continue;
                 
                 w.teachers.forEach((t: any) => {
-                    if (!teacherStatsMap[t.id]) {
-                        teacherStatsMap[t.id] = { 
+                    const key = t.name.trim(); // Dùng Tên làm khóa gộp
+                    if (!teacherStatsMap[key]) {
+                        teacherStatsMap[key] = { 
                             name: t.name, 
                             totalQuota: 0, 
                             totalActual: 0, 
@@ -493,15 +495,15 @@ const App = () => {
                     }
                     
                     const q = Math.max(0, data.standardQuota - getTeacherReduction(t.roles));
-                    teacherStatsMap[t.id].totalQuota += q;
-                    teacherStatsMap[t.id].lastQ = q; // QM tuần gần nhất
+                    teacherStatsMap[key].totalQuota += q;
+                    teacherStatsMap[key].lastQ = q; 
 
                     const log = (w.logs || {})[t.id];
                     if (log) {
-                        teacherStatsMap[t.id].totalActual += (log.actual ?? getTKBPeriods(w.assignments[t.id] || ""));
-                        teacherStatsMap[t.id].totalExtra += (log.bu || 0) + (log.tang || 0);
+                        teacherStatsMap[key].totalActual += (log.actual ?? getTKBPeriods(w.assignments[t.id] || ""));
+                        teacherStatsMap[key].totalExtra += (log.bu || 0) + (log.tang || 0);
                     } else {
-                        teacherStatsMap[t.id].totalActual += getTKBPeriods(w.assignments[t.id] || "");
+                        teacherStatsMap[key].totalActual += getTKBPeriods(w.assignments[t.id] || "");
                     }
                 });
             }
@@ -518,7 +520,7 @@ const App = () => {
                     <div>
                         <h2 className="text-4xl font-black text-slate-800 tracking-tighter uppercase italic">Quyết toán Tiết dạy</h2>
                         <p className="text-slate-400 font-bold uppercase text-[10px] tracking-widest flex items-center gap-2 mt-1">
-                            <Info size={14} className="text-blue-500"/> Lũy kế từ Tuần 1 đến Tuần {reportWeeks}
+                            <Info size={14} className="text-blue-500"/> Lũy kế từ Tuần 1 đến Tuần {reportWeeks} (Gộp theo tên)
                         </p>
                     </div>
                     <div className="bg-slate-100 p-4 rounded-[2.5rem] flex items-center gap-4 shadow-inner border border-slate-200">
@@ -531,9 +533,9 @@ const App = () => {
                         <thead className="bg-slate-50 border-b text-[10px] font-black uppercase text-slate-400">
                             <tr>
                                 <th className="p-8">Giáo viên</th>
-                                <th className="p-8 text-center">Định mức</th>
-                                <th className="p-8 text-center">Thực dạy</th>
-                                <th className="p-8 text-center text-orange-600">Bù/Tăng</th>
+                                <th className="p-8 text-center">Tổng Định mức</th>
+                                <th className="p-8 text-center">Tổng Thực dạy</th>
+                                <th className="p-8 text-center text-orange-600">Tổng Bù/Tăng</th>
                                 <th className="p-8 text-center bg-blue-50/30 text-blue-700">Tổng Lũy kế</th>
                                 <th className="p-8 text-center bg-slate-100">Chênh lệch</th>
                             </tr>
@@ -543,7 +545,7 @@ const App = () => {
                                 <tr key={i} className="border-b hover:bg-slate-50/50 transition-all">
                                     <td className="p-8">
                                         <div className="font-black text-slate-700 text-xl">{s.name}</div>
-                                        <div className="text-[9px] font-bold text-slate-300 uppercase mt-1">ĐM: {s.lastQ}t/tuần</div>
+                                        <div className="text-[9px] font-bold text-slate-300 uppercase mt-1">Định mức chuẩn: {s.lastQ}t/tuần</div>
                                     </td>
                                     <td className="p-8 text-center font-black text-slate-400 text-xl">{s.totalQuota.toFixed(1)}</td>
                                     <td className="p-8 text-center font-black text-slate-800 text-2xl">{s.totalActual.toFixed(1)}</td>
@@ -567,7 +569,7 @@ const App = () => {
                 <div className="container mx-auto flex flex-col md:flex-row justify-between items-center gap-8">
                     <div className="flex items-center gap-5">
                         <div className="bg-blue-600 p-4 rounded-[1.5rem] text-white shadow-2xl rotate-3"><LayoutDashboard size={32}/></div>
-                        <h1 className="font-black text-3xl tracking-tighter text-slate-800 uppercase italic">THCS PRO <span className="text-blue-600 text-sm align-top italic font-black">v6.4</span></h1>
+                        <h1 className="font-black text-3xl tracking-tighter text-slate-800 uppercase italic">THCS PRO <span className="text-blue-600 text-sm align-top italic font-black">v6.5</span></h1>
                     </div>
                     <nav className="flex gap-2 bg-slate-100 p-2 rounded-[2.5rem] overflow-x-auto no-scrollbar">
                         {[
@@ -603,7 +605,7 @@ const App = () => {
                                             }}/>
                                         </div>
                                     ))}
-                                    <h3 className="font-black text-slate-700 uppercase text-xs mt-12 mb-8 tracking-widest flex items-center gap-3"><Users size={18} className="text-emerald-500"/> Danh mục Chức vụ</h3>
+                                    <h3 className="font-black text-slate-700 uppercase text-xs mt-12 mb-8 tracking-widest flex items-center gap-3"><Users size={18} className="text-emerald-500"/> Chức vụ kiêm nhiệm</h3>
                                     {data.roles.map((r: any, i: number) => (
                                         <div key={r.id} className="flex justify-between items-center py-4 border-b border-slate-100 last:border-0 hover:bg-white/50 px-4 rounded-xl transition-all">
                                             <span className="font-black text-slate-600 uppercase text-[11px]">{r.name}</span>
