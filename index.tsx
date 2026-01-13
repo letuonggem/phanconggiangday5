@@ -7,11 +7,11 @@ import {
     RefreshCw, Cloud, CloudUpload, CloudDownload, Save, 
     CheckCircle2, AlertTriangle, ShieldCheck, TrendingUp, BookOpen, Download, Upload,
     ClipboardCheck, Copy, Plus, FileSpreadsheet, UserPlus, Hash, Book, ChevronDown,
-    AlertCircle, Info, Briefcase, Award
+    AlertCircle, Info, Briefcase, Award, CopyCheck
 } from 'lucide-react';
 
-// --- CẤU HÌNH HỆ THỐNG MẶC ĐỊNH ---
-const STORAGE_KEY = 'thcs_mgmt_v4_perfect_final';
+// --- CẤU HÌNH HỆ THỐNG ---
+const STORAGE_KEY = 'thcs_mgmt_v4_weekly_assignments_v1';
 
 const DEFAULT_SUBJECT_CONFIGS = [
     { name: 'Toán', periods: 4 },
@@ -38,15 +38,14 @@ const DEFAULT_ROLES = [
     { id: 'r5', name: 'TPT Đội', reduction: 10 }
 ];
 
-// --- HÀM TRỢ GIÚP CHUẨN HÓA & KIỂM TRA ---
+// --- HÀM TRỢ GIÚP ---
 const validateClassFormat = (className: string) => {
     const cleanName = className.trim().toUpperCase();
     if (!cleanName) return null;
     const gradeMatch = cleanName.match(/^\d+/);
     if (!gradeMatch) return `Lớp "${cleanName}" thiếu số khối (6-9)`;
     const grade = parseInt(gradeMatch[0]);
-    if (grade < 6 || grade > 9) return `Lớp "${cleanName}" sai khối (Chỉ nhập 6-9)`;
-    if (cleanName.length < 2) return `Tên lớp "${cleanName}" quá ngắn`;
+    if (grade < 6 || grade > 9) return `Lớp "${cleanName}" sai khối (Chỉ 6-9)`;
     return null;
 };
 
@@ -58,7 +57,7 @@ const normalizeClassStr = (str: string) => {
               .join(', ');
 };
 
-const findConflicts = (proposedAssignments: string, currentTeachers: any[], excludeTeacherId?: string) => {
+const findConflicts = (proposedAssignments: string, currentAssignments: Record<string, string>, teachers: any[], excludeTeacherId?: string) => {
     const conflicts: string[] = [];
     if (!proposedAssignments) return conflicts;
 
@@ -70,9 +69,12 @@ const findConflicts = (proposedAssignments: string, currentTeachers: any[], excl
         const subject = subPart.trim().toLowerCase();
         const inputClasses = clsPart.split(',').map(c => c.trim().toUpperCase().replace(/\s+/g, '')).filter(c => c);
 
-        currentTeachers.forEach(teacher => {
-            if (excludeTeacherId && teacher.id === excludeTeacherId) return;
-            const existingParts = teacher.assignments.split(';');
+        Object.entries(currentAssignments).forEach(([teacherId, existingAssignmentStr]) => {
+            if (excludeTeacherId && teacherId === excludeTeacherId) return;
+            const teacher = teachers.find(t => t.id === teacherId);
+            if (!teacher) return;
+
+            const existingParts = existingAssignmentStr.split(';');
             existingParts.forEach(exPart => {
                 const [exSub, exClsPart] = exPart.split(':');
                 if (!exSub || !exClsPart) return;
@@ -88,7 +90,6 @@ const findConflicts = (proposedAssignments: string, currentTeachers: any[], excl
     return conflicts;
 };
 
-// --- COMPONENT CHÍNH ---
 const App = () => {
     const [activeTab, setActiveTab] = useState('teachers');
     const [syncStatus, setSyncStatus] = useState({ message: '', type: '' });
@@ -96,12 +97,14 @@ const App = () => {
 
     const [data, setData] = useState(() => {
         const saved = localStorage.getItem(STORAGE_KEY);
-        return saved ? JSON.parse(saved) : { 
+        if (saved) return JSON.parse(saved);
+        return { 
             standardQuota: 19, 
             roles: DEFAULT_ROLES,
             subjectConfigs: DEFAULT_SUBJECT_CONFIGS,
             teachers: [], 
-            weeklyData: {} 
+            weeklyAssignments: {}, // { [week]: { [teacherId]: "Toán: 6A1" } }
+            weeklyData: {} // { [week]: { [teacherId]: 18.5 } }
         };
     });
 
@@ -111,7 +114,7 @@ const App = () => {
 
     const updateData = (newData: any) => setData((prev: any) => ({ ...prev, ...newData }));
 
-    const getTeacherTKBPeriods = useMemo(() => {
+    const getTKBPeriods = useMemo(() => {
         const configMap = new Map<string, number>(
             (data.subjectConfigs || []).map((s: any) => [String(s.name).toLowerCase(), Number(s.periods)])
         );
@@ -137,8 +140,8 @@ const App = () => {
         }, 0);
     };
 
-    // --- FORM NHẬP TAY (TỐI ƯU GIAO DIỆN) ---
-    const AddTeacherForm = ({ onAdd, subjects, allTeachers, rolesConfig }: any) => {
+    // --- FORM NHẬP TAY TRONG TAB PHÂN CÔNG ---
+    const AddTeacherAssignmentForm = ({ onAdd, subjects, allTeachers, currentWeekAssignments, rolesConfig }: any) => {
         const [name, setName] = useState('');
         const [sub, setSub] = useState('');
         const [cls, setCls] = useState('');
@@ -156,25 +159,30 @@ const App = () => {
                 });
                 if (sub) {
                     const proposed = `${sub}: ${normalizeClassStr(cls)}`;
-                    const conflicts = findConflicts(proposed, allTeachers);
+                    const conflicts = findConflicts(proposed, currentWeekAssignments, allTeachers);
                     conflictErrs.push(...conflicts);
                 }
             }
             setErrors({ format: formatErrs, conflicts: conflictErrs });
-        }, [sub, cls, allTeachers]);
+        }, [sub, cls, allTeachers, currentWeekAssignments]);
 
-        const toggleRole = (roleName: string) => {
-            if (!roleName) return;
-            setSelectedRoles(prev => 
-                prev.includes(roleName) ? prev.filter(x => x !== roleName) : [...prev, roleName]
-            );
+        const toggleRole = (rName: string) => {
+            if (!rName) return;
+            setSelectedRoles(prev => prev.includes(rName) ? prev.filter(x => x !== rName) : [...prev, rName]);
         };
 
         const handleSubmit = () => {
-            if (!name || !sub || !cls) return alert("Vui lòng nhập đầy đủ thông tin GV!");
+            if (!name || !sub || !cls) return alert("Vui lòng nhập đầy đủ thông tin!");
             if (errors.format.length > 0 || errors.conflicts.length > 0) return;
+            
+            const teacherId = Date.now().toString();
             const proposed = `${sub}: ${normalizeClassStr(cls)}`;
-            onAdd({ id: Date.now().toString(), name, assignments: proposed, roles: selectedRoles });
+            
+            onAdd({ 
+                teacher: { id: teacherId, name, roles: selectedRoles },
+                assignment: proposed 
+            });
+
             setName(''); setSub(''); setCls(''); setSelectedRoles([]);
         };
 
@@ -183,94 +191,87 @@ const App = () => {
         return (
             <div className="mb-10 bg-blue-50/40 border-2 border-blue-100 p-8 rounded-[3.5rem] animate-fadeIn shadow-inner">
                 <div className="grid grid-cols-1 xl:grid-cols-5 gap-6 items-start">
-                    {/* HỌ TÊN */}
                     <div className="space-y-2">
-                        <label className="text-[10px] font-black text-blue-500 uppercase ml-2 tracking-widest">Họ tên GV</label>
+                        <label className="text-[10px] font-black text-blue-500 uppercase ml-2 tracking-widest">Họ tên GV mới</label>
                         <input type="text" placeholder="Nguyễn Văn A" className="w-full p-4 bg-white rounded-2xl border-none shadow-sm font-bold text-slate-700 outline-none focus:ring-2 focus:ring-blue-500 transition-all" value={name} onChange={e => setName(e.target.value)}/>
                     </div>
-
-                    {/* MÔN HỌC */}
                     <div className="space-y-2">
                         <label className="text-[10px] font-black text-blue-500 uppercase ml-2 tracking-widest">Môn chính</label>
                         <div className="relative">
-                            <select className="w-full p-4 bg-white rounded-2xl border-none shadow-sm font-bold text-slate-700 outline-none focus:ring-2 appearance-none transition-all cursor-pointer" value={sub} onChange={e => setSub(e.target.value)}>
+                            <select className="w-full p-4 bg-white rounded-2xl border-none shadow-sm font-bold text-slate-700 outline-none focus:ring-2 appearance-none cursor-pointer" value={sub} onChange={e => setSub(e.target.value)}>
                                 <option value="">-- Chọn môn --</option>
                                 {subjects.map((s: any) => <option key={s.name} value={s.name}>{s.name}</option>)}
                             </select>
                             <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-300 pointer-events-none" size={16}/>
                         </div>
                     </div>
-
-                    {/* LỚP DẠY */}
                     <div className="space-y-2">
-                        <label className="text-[10px] font-black text-blue-500 uppercase ml-2 tracking-widest">Lớp (vd: 6A1, 7B2)</label>
+                        <label className="text-[10px] font-black text-blue-500 uppercase ml-2 tracking-widest">Lớp (Tuần {currentWeek})</label>
                         <input type="text" placeholder="6A1, 7B2" className={`w-full p-4 bg-white rounded-2xl border-none shadow-sm font-bold text-slate-700 outline-none focus:ring-2 ${errors.format.length > 0 ? 'ring-2 ring-orange-400' : ''} transition-all`} value={cls} onChange={e => setCls(e.target.value)}/>
                     </div>
-
-                    {/* KIÊM NHIỆM (Dropdown đồng bộ từ config) */}
                     <div className="space-y-2">
                         <label className="text-[10px] font-black text-blue-500 uppercase ml-2 tracking-widest">Kiêm nhiệm</label>
                         <div className="relative">
-                            <select 
-                                className="w-full p-4 bg-white rounded-2xl border-none shadow-sm font-bold text-slate-700 outline-none focus:ring-2 appearance-none transition-all cursor-pointer"
-                                value="" 
-                                onChange={e => toggleRole(e.target.value)}
-                            >
+                            <select className="w-full p-4 bg-white rounded-2xl border-none shadow-sm font-bold text-slate-700 outline-none focus:ring-2 appearance-none cursor-pointer" value="" onChange={e => toggleRole(e.target.value)}>
                                 <option value="">-- Chọn việc --</option>
                                 {rolesConfig.map((r: any) => (
-                                    <option key={r.id} value={r.name}>{r.name} (-{r.reduction} tiết)</option>
+                                    <option key={r.id} value={r.name}>{r.name} (-{r.reduction}t)</option>
                                 ))}
                             </select>
                             <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-300 pointer-events-none" size={16}/>
                         </div>
-                        {/* Tags list */}
-                        <div className="flex flex-wrap gap-1.5 mt-2">
+                        <div className="flex flex-wrap gap-1 mt-2">
                             {selectedRoles.map(r => (
-                                <span key={r} className="bg-blue-600 text-white text-[9px] px-2.5 py-1 rounded-lg flex items-center gap-1.5 font-black shadow-sm">
-                                    {r} <X size={10} className="cursor-pointer hover:text-red-300" onClick={() => toggleRole(r)}/>
+                                <span key={r} className="bg-blue-600 text-white text-[9px] px-2 py-1 rounded-lg flex items-center gap-1 font-black">
+                                    {r} <X size={10} className="cursor-pointer" onClick={() => toggleRole(r)}/>
                                 </span>
                             ))}
                         </div>
                     </div>
-
-                    {/* NÚT XÁC NHẬN */}
                     <div className="pt-6">
-                        <button onClick={handleSubmit} disabled={hasError} className={`w-full py-4 rounded-2xl font-black shadow-lg transition-all flex items-center justify-center gap-2 ${hasError ? 'bg-slate-300 text-slate-500 cursor-not-allowed' : 'bg-blue-600 text-white hover:bg-blue-700 active:scale-95'}`}>
-                            {hasError ? <X size={18}/> : <Plus size={18}/>} LƯU GV MỚI
+                        <button onClick={handleSubmit} disabled={hasError} className={`w-full py-4 rounded-2xl font-black shadow-lg transition-all flex items-center justify-center gap-2 ${hasError ? 'bg-slate-300 text-slate-500 cursor-not-allowed' : 'bg-blue-600 text-white hover:bg-blue-700'}`}>
+                            {hasError ? <X size={18}/> : <Plus size={18}/>} LƯU PHÂN CÔNG
                         </button>
                     </div>
                 </div>
-
-                {/* CẢNH BÁO VALIDATION */}
-                {(errors.format.length > 0 || errors.conflicts.length > 0) && (
-                    <div className="mt-6 flex flex-col gap-2 animate-fadeIn">
-                        {errors.format.map((e, i) => (
-                            <div key={i} className="text-[10px] font-bold text-orange-600 bg-orange-50 px-5 py-3 rounded-xl border border-orange-100 flex items-center gap-3">
-                                <AlertTriangle size={14}/> {e.toUpperCase()}
-                            </div>
-                        ))}
-                        {errors.conflicts.map((e, i) => (
-                            <div key={i} className="text-[10px] font-bold text-red-600 bg-red-50 px-5 py-3 rounded-xl border border-red-100 flex items-center gap-3">
-                                <AlertCircle size={14}/> PHÂN CÔNG BỊ TRÙNG: {e.toUpperCase()}
-                            </div>
-                        ))}
+                { (errors.format.length > 0 || errors.conflicts.length > 0) && (
+                    <div className="mt-4 space-y-2">
+                        {errors.format.map((e, i) => <div key={i} className="text-[10px] font-bold text-orange-600 flex items-center gap-2"><AlertTriangle size={14}/> {e.toUpperCase()}</div>)}
+                        {errors.conflicts.map((e, i) => <div key={i} className="text-[10px] font-bold text-red-600 flex items-center gap-2"><AlertCircle size={14}/> {e.toUpperCase()}</div>)}
                     </div>
                 )}
             </div>
         );
     };
 
-    // --- TAB QUẢN LÝ PHÂN CÔNG ---
+    // --- TAB PHÂN CÔNG (HÀNG TUẦN) ---
     const TeacherTab = () => {
         const [isAdding, setIsAdding] = useState(false);
         const fileRef = useRef<HTMLInputElement>(null);
+        const currentAssignments = data.weeklyAssignments[currentWeek] || {};
 
-        const exportTemplate = () => {
-            const templateData = [{ "Họ tên": "Nguyễn Văn A", "Phân công (Môn: Lớp1, Lớp2)": "Toán: 6A1, 6A2; Tin: 7A3", "Kiêm nhiệm": "Chủ nhiệm, Tổ trưởng" }];
-            const ws = (window as any).XLSX.utils.json_to_sheet(templateData);
-            const wb = (window as any).XLSX.utils.book_new();
-            (window as any).XLSX.utils.book_append_sheet(wb, ws, "Mau_THCS_Pro");
-            (window as any).XLSX.writeFile(wb, "Mau_Phan_Cong_THCS.xlsx");
+        const copyFromPrevious = () => {
+            if (currentWeek <= 1) return alert("Đây là tuần đầu tiên!");
+            const prev = data.weeklyAssignments[currentWeek - 1];
+            if (!prev || Object.keys(prev).length === 0) return alert("Tuần trước chưa có dữ liệu phân công!");
+            
+            updateData({ 
+                weeklyAssignments: { 
+                    ...data.weeklyAssignments, 
+                    [currentWeek]: { ...prev } 
+                } 
+            });
+            setSyncStatus({ message: `Đã sao chép phân công từ Tuần ${currentWeek-1}`, type: 'success' });
+            setTimeout(() => setSyncStatus({ message: '', type: '' }), 3000);
+        };
+
+        const updateTeacherAssignment = (teacherId: string, val: string) => {
+            updateData({
+                weeklyAssignments: {
+                    ...data.weeklyAssignments,
+                    [currentWeek]: { ...currentAssignments, [teacherId]: val }
+                }
+            });
         };
 
         const handleImport = (e: any) => {
@@ -280,18 +281,31 @@ const App = () => {
             reader.onload = (evt: any) => {
                 const wb = (window as any).XLSX.read(evt.target.result, {type:'binary'});
                 const rows = (window as any).XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
-                const validTeachers: any[] = [];
+                const newTeachers = [...data.teachers];
+                const newWeekAssignments = { ...currentAssignments };
+
                 rows.forEach((row: any, i: number) => {
-                    const rolesRaw = row['Kiêm nhiệm'] || row['chucvu'] || '';
-                    validTeachers.push({
-                        id: (Date.now() + i).toString(),
-                        name: row['Họ tên'] || row['GV'] || 'GV mới',
-                        assignments: row['Phân công (Môn: Lớp1, Lớp2)'] || '',
-                        roles: rolesRaw.split(',').map((s: string) => s.trim()).filter((s: string) => s)
-                    });
+                    const name = row['Họ tên'] || row['GV'] || 'GV Mới';
+                    const assignments = row['Phân công (Môn: Lớp1, Lớp2)'] || '';
+                    const rolesRaw = row['Kiêm nhiệm'] || '';
+                    
+                    let teacher = newTeachers.find(t => t.name.toLowerCase() === name.toLowerCase());
+                    if (!teacher) {
+                        teacher = { 
+                            id: (Date.now() + i).toString(), 
+                            name, 
+                            roles: rolesRaw.split(',').map((s: string) => s.trim()).filter((s: string) => s) 
+                        };
+                        newTeachers.push(teacher);
+                    }
+                    newWeekAssignments[teacher.id] = assignments;
                 });
-                updateData({ teachers: [...data.teachers, ...validTeachers] });
-                setSyncStatus({ message: `Đã nhập ${validTeachers.length} GV`, type: 'success' });
+
+                updateData({ 
+                    teachers: newTeachers, 
+                    weeklyAssignments: { ...data.weeklyAssignments, [currentWeek]: newWeekAssignments } 
+                });
+                setSyncStatus({ message: `Đã nhập dữ liệu Excel cho Tuần ${currentWeek}`, type: 'success' });
                 setTimeout(() => setSyncStatus({ message: '', type: '' }), 3000);
             };
             reader.readAsBinaryString(file);
@@ -299,86 +313,150 @@ const App = () => {
 
         return (
             <div className="p-8 animate-fadeIn">
-                <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-6 mb-12">
-                    <div>
-                        <h2 className="text-4xl font-black text-slate-800 tracking-tighter">Phân công & Kiêm nhiệm</h2>
-                        <div className="text-[10px] font-black text-blue-500 uppercase tracking-widest mt-2 flex items-center gap-2">
-                           <ShieldCheck size={14}/> Hệ thống tự động tính dôi dư sau giảm trừ
+                <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-8 mb-12">
+                    <div className="flex items-center gap-6 bg-white border-2 border-slate-100 p-4 rounded-[2.5rem] shadow-sm">
+                        <button onClick={() => setCurrentWeek(Math.max(1, currentWeek-1))} className="p-4 hover:bg-slate-100 rounded-2xl"><ChevronLeft/></button>
+                        <div className="px-10 text-center">
+                            <div className="text-[10px] font-black text-blue-500 uppercase tracking-widest mb-1">PHÂN CÔNG TUẦN</div>
+                            <div className="text-4xl font-black tracking-tighter">{currentWeek}</div>
                         </div>
+                        <button onClick={() => setCurrentWeek(currentWeek+1)} className="p-4 hover:bg-slate-100 rounded-2xl"><ChevronRight/></button>
                     </div>
+
                     <div className="flex flex-wrap gap-3">
-                        <button onClick={() => setIsAdding(!isAdding)} className="bg-blue-600 text-white px-8 py-4 rounded-2xl flex items-center gap-2 font-bold shadow-xl hover:bg-blue-700 transition-all">
-                            <UserPlus size={20}/> {isAdding ? 'Đóng Form' : 'Thêm GV'}
+                        <button onClick={copyFromPrevious} className="bg-white border-2 border-blue-100 text-blue-600 px-8 py-4 rounded-2xl flex items-center gap-3 font-bold hover:bg-blue-50 transition-all">
+                            <CopyCheck size={20}/> Sao chép tuần trước
                         </button>
-                        <button onClick={exportTemplate} className="bg-white border-2 border-slate-100 text-slate-600 px-6 py-4 rounded-2xl flex items-center gap-2 font-bold hover:bg-slate-50 transition-all">
-                            <Download size={20} className="text-blue-500"/> File mẫu
+                        <button onClick={() => setIsAdding(!isAdding)} className="bg-blue-600 text-white px-8 py-4 rounded-2xl flex items-center gap-3 font-bold shadow-xl hover:bg-blue-700">
+                            <UserPlus size={20}/> {isAdding ? 'Đóng form' : 'Thêm GV'}
                         </button>
                         <input type="file" ref={fileRef} className="hidden" onChange={handleImport} accept=".xlsx, .xls"/>
-                        <button onClick={() => fileRef.current?.click()} className="bg-emerald-600 text-white px-8 py-4 rounded-2xl flex items-center gap-2 font-bold shadow-xl hover:bg-emerald-700 transition-all">
+                        <button onClick={() => fileRef.current?.click()} className="bg-emerald-600 text-white px-8 py-4 rounded-2xl flex items-center gap-3 font-bold shadow-xl hover:bg-emerald-700">
                             <FileSpreadsheet size={20}/> Nhập Excel
                         </button>
                     </div>
                 </div>
 
-                {isAdding && <AddTeacherForm onAdd={(gv: any) => { updateData({ teachers: [gv, ...data.teachers] }); setIsAdding(false); }} subjects={data.subjectConfigs} allTeachers={data.teachers} rolesConfig={data.roles} />}
+                {isAdding && (
+                    <AddTeacherAssignmentForm 
+                        allTeachers={data.teachers} 
+                        currentWeekAssignments={currentAssignments} 
+                        subjects={data.subjectConfigs} 
+                        rolesConfig={data.roles}
+                        onAdd={({ teacher, assignment }: any) => {
+                            updateData({ 
+                                teachers: [teacher, ...data.teachers],
+                                weeklyAssignments: { 
+                                    ...data.weeklyAssignments, 
+                                    [currentWeek]: { ...currentAssignments, [teacher.id]: assignment } 
+                                }
+                            });
+                            setIsAdding(false);
+                        }}
+                    />
+                )}
 
                 <div className="bg-white rounded-[3.5rem] border-2 border-slate-50 overflow-hidden shadow-sm">
                     <table className="w-full text-left">
-                        <thead className="bg-slate-50 border-b">
-                            <tr className="text-[10px] font-black uppercase text-slate-400">
+                        <thead className="bg-slate-50 border-b text-[10px] font-black uppercase text-slate-400">
+                            <tr>
                                 <th className="p-8">Giáo viên & Kiêm nhiệm</th>
-                                <th className="p-8 text-center">Giảm tiết</th>
-                                <th className="p-8 text-center">Định mức thực</th>
+                                <th className="p-8">Phân công dạy (Tuần {currentWeek})</th>
                                 <th className="p-8 text-center">Tiết TKB</th>
                                 <th className="p-8"></th>
                             </tr>
                         </thead>
                         <tbody>
                             {data.teachers.map((t: any) => {
-                                const reduction = getTeacherReduction(t.roles);
-                                const actualQuota = Math.max(0, data.standardQuota - reduction);
+                                const assignment = currentAssignments[t.id] || "";
+                                const tkbPeriods = getTKBPeriods(assignment);
                                 return (
                                     <tr key={t.id} className="border-b group hover:bg-slate-50/50 transition-all">
                                         <td className="p-8">
-                                            <div className="font-black text-slate-800 text-xl mb-3">{t.name}</div>
-                                            <div className="flex flex-wrap gap-2">
+                                            <div className="font-black text-slate-800 text-xl mb-2">{t.name}</div>
+                                            <div className="flex flex-wrap gap-1">
                                                 {t.roles.map((r: string) => (
-                                                    <span key={r} className="bg-blue-50 text-blue-600 text-[9px] font-black px-3 py-1 rounded-lg border border-blue-100 uppercase">{r}</span>
+                                                    <span key={r} className="bg-blue-50 text-blue-600 text-[8px] font-black px-2 py-0.5 rounded border border-blue-100 uppercase">{r}</span>
                                                 ))}
-                                                {t.roles.length === 0 && <span className="text-[9px] text-slate-300 italic uppercase">Không kiêm nhiệm</span>}
                                             </div>
                                         </td>
-                                        <td className="p-8 text-center font-black text-blue-400">-{reduction}</td>
-                                        <td className="p-8 text-center font-black text-slate-800 text-2xl">{actualQuota}</td>
-                                        <td className="p-8 text-center">
-                                            <div className="inline-block px-8 py-4 bg-slate-50 text-slate-700 rounded-2xl font-black text-3xl">
-                                                {getTeacherTKBPeriods(t.assignments)}
-                                            </div>
+                                        <td className="p-8">
+                                            <input 
+                                                type="text" 
+                                                placeholder="VD: Toán: 6A1, 6A2"
+                                                className="w-full p-4 bg-slate-50 rounded-2xl border-none font-bold text-slate-600 focus:ring-2 focus:ring-blue-500"
+                                                value={assignment}
+                                                onChange={e => updateTeacherAssignment(t.id, e.target.value)}
+                                            />
                                         </td>
+                                        <td className="p-8 text-center font-black text-slate-800 text-2xl">{tkbPeriods}</td>
                                         <td className="p-8 text-right">
-                                            <button onClick={() => updateData({ teachers: data.teachers.filter((x: any) => x.id !== t.id) })} className="text-slate-200 hover:text-red-500 p-4 transition-all hover:bg-red-50 rounded-xl"><Trash2 size={24}/></button>
+                                            <button onClick={() => updateData({ teachers: data.teachers.filter((x: any) => x.id !== t.id) })} className="text-slate-200 hover:text-red-500 p-2"><Trash2 size={20}/></button>
                                         </td>
                                     </tr>
                                 );
                             })}
                         </tbody>
                     </table>
-                    {data.teachers.length === 0 && <div className="p-20 text-center text-slate-300 font-black italic tracking-widest uppercase">Chưa có dữ liệu giáo viên</div>}
                 </div>
             </div>
         );
     };
 
-    // --- TAB BÁO CÁO TỔNG HỢP ---
+    // --- TAB TIẾT DẠY (NHẬP TUẦN) ---
+    const WeeklyTab = () => {
+        const [tempLogs, setTempLogs] = useState(data.weeklyData[currentWeek] || {});
+        useEffect(() => { setTempLogs(data.weeklyData[currentWeek] || {}); }, [currentWeek, data.weeklyData]);
+
+        return (
+            <div className="p-8">
+                <div className="flex flex-col md:flex-row justify-between items-center mb-12 gap-6">
+                    <div className="flex items-center gap-6 bg-white border-2 border-slate-100 p-4 rounded-[2.5rem] shadow-sm">
+                        <button onClick={() => setCurrentWeek(Math.max(1, currentWeek-1))} className="p-4 hover:bg-slate-100 rounded-2xl"><ChevronLeft/></button>
+                        <div className="px-10 text-center"><div className="text-[10px] font-black text-blue-500 uppercase tracking-widest mb-1">GHI NHẬN TUẦN</div><div className="text-4xl font-black tracking-tighter">{currentWeek}</div></div>
+                        <button onClick={() => setCurrentWeek(currentWeek+1)} className="p-4 hover:bg-slate-100 rounded-2xl"><ChevronRight/></button>
+                    </div>
+                    <button onClick={() => { updateData({ weeklyData: {...data.weeklyData, [currentWeek]: tempLogs} }); setSyncStatus({message: 'Đã lưu tiết dạy Tuần '+currentWeek, type: 'success'}); setTimeout(()=>setSyncStatus({message:'',type:''}),2000); }} className="bg-blue-600 text-white px-12 py-5 rounded-[2rem] font-black shadow-xl hover:bg-blue-700">LƯU THỰC DẠY</button>
+                </div>
+                <div className="bg-white rounded-[4rem] border-2 border-slate-50 overflow-hidden shadow-sm">
+                    <table className="w-full text-left">
+                        <thead className="bg-slate-50 border-b text-[10px] font-black uppercase text-slate-400">
+                            <tr><th className="p-10">Giáo viên</th><th className="p-10">Phân công tuần {currentWeek}</th><th className="p-10 text-center">Thực dạy</th></tr>
+                        </thead>
+                        <tbody>
+                            {data.teachers.map((t: any) => (
+                                <tr key={t.id} className="border-b hover:bg-slate-50/50 transition-all">
+                                    <td className="p-10"><div className="font-black text-slate-700 text-2xl">{t.name}</div></td>
+                                    <td className="p-10 text-slate-400 font-bold italic">{data.weeklyAssignments[currentWeek]?.[t.id] || "Chưa phân công"}</td>
+                                    <td className="p-10"><input type="number" step="0.5" className="w-40 mx-auto block text-center p-8 bg-emerald-50 rounded-[2.5rem] font-black text-5xl text-emerald-700 outline-none shadow-inner" value={tempLogs[t.id] || 0} onChange={e => setTempLogs({...tempLogs, [t.id]: parseFloat(e.target.value) || 0})}/></td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        );
+    };
+
+    // --- TAB BÁO CÁO (TÍNH TOÁN DÔI DƯ DỰA TRÊN PHÂN CÔNG HÀNG TUẦN) ---
     const ReportTab = () => {
         const [weeks, setWeeks] = useState(4);
         const stats = useMemo(() => {
             return data.teachers.map((t: any) => {
                 const reduction = getTeacherReduction(t.roles);
                 const actualQuotaPerWeek = Math.max(0, data.standardQuota - reduction);
-                const totalQuota = actualQuotaPerWeek * weeks;
+                
+                let totalQuota = 0;
                 let totalActual = 0;
-                for(let i=1; i<=weeks; i++) totalActual += (data.weeklyData[i]?.[t.id] || 0);
+                
+                // Quét từng tuần để tính tổng định mức thực tế (vì mỗi tuần phân công có thể khác nhau)
+                for (let i = 1; i <= weeks; i++) {
+                    // Định mức tiết tuần i = actualQuotaPerWeek (Cố định theo chức vụ)
+                    totalQuota += actualQuotaPerWeek;
+                    // Thực dạy tuần i
+                    totalActual += (data.weeklyData[i]?.[t.id] || 0);
+                }
+                
                 return { name: t.name, reduction, actualQuotaPerWeek, totalQuota, totalActual, balance: totalActual - totalQuota };
             });
         }, [data, weeks]);
@@ -387,25 +465,24 @@ const App = () => {
             <div className="p-8 animate-fadeIn">
                 <div className="flex flex-col md:flex-row justify-between items-end mb-12 gap-8">
                     <div>
-                        <h2 className="text-3xl font-black text-slate-800 tracking-tighter mb-4">Báo cáo Dôi dư Tổng hợp</h2>
-                        <p className="text-slate-400 font-bold uppercase text-[10px] tracking-widest flex items-center gap-2"><Award size={14} className="text-blue-500"/> Đã tính theo định mức {data.standardQuota} tiết và kiêm nhiệm</p>
+                        <h2 className="text-3xl font-black text-slate-800 tracking-tighter mb-4">Quyết toán Tiết dạy & Dôi dư</h2>
+                        <p className="text-slate-400 font-bold uppercase text-[10px] tracking-widest flex items-center gap-2">Dữ liệu lũy kế từ tuần 1 đến tuần {weeks}</p>
                     </div>
-                    <div className="bg-slate-100 p-3 rounded-[2rem] flex items-center gap-4 border border-slate-200 shadow-sm">
-                        <span className="text-[10px] font-black text-slate-400 ml-4 uppercase">Thời gian:</span>
-                        <input type="number" value={weeks} onChange={e => setWeeks(parseInt(e.target.value) || 1)} className="w-16 p-3 bg-white rounded-xl text-center font-black text-blue-600 outline-none shadow-inner"/>
+                    <div className="bg-slate-100 p-3 rounded-[2rem] flex items-center gap-4">
+                        <span className="text-[10px] font-black text-slate-400 ml-4 uppercase">Thời gian tính:</span>
+                        <input type="number" value={weeks} onChange={e => setWeeks(parseInt(e.target.value) || 1)} className="w-16 p-3 bg-white rounded-xl text-center font-black text-blue-600 outline-none shadow-sm"/>
                         <span className="text-[10px] font-black text-slate-400 mr-4 uppercase">TUẦN</span>
                     </div>
                 </div>
-
                 <div className="bg-white rounded-[3.5rem] border-2 border-slate-50 overflow-hidden shadow-sm">
                     <table className="w-full text-left">
                         <thead className="bg-slate-50 border-b text-[10px] font-black uppercase text-slate-400">
                             <tr>
                                 <th className="p-8">Giáo viên</th>
-                                <th className="p-8 text-center">Giảm/Tuần</th>
-                                <th className="p-8 text-center">Định mức/Tuần</th>
-                                <th className="p-8 text-center">Tổng định mức</th>
-                                <th className="p-8 text-center">Tổng thực dạy</th>
+                                <th className="p-8 text-center">Giảm tiết/Tuần</th>
+                                <th className="p-8 text-center">Định mức thực/Tuần</th>
+                                <th className="p-8 text-center">Tổng định mức ({weeks}t)</th>
+                                <th className="p-8 text-center text-blue-600">Tổng thực dạy</th>
                                 <th className="p-8 text-center bg-blue-50/50">Dôi dư</th>
                             </tr>
                         </thead>
@@ -417,41 +494,9 @@ const App = () => {
                                     <td className="p-8 text-center font-black text-slate-500">{s.actualQuotaPerWeek}</td>
                                     <td className="p-8 text-center font-black text-slate-300">{s.totalQuota.toFixed(1)}</td>
                                     <td className="p-8 text-center font-black text-2xl text-slate-800">{s.totalActual.toFixed(1)}</td>
-                                    <td className={`p-8 text-center text-3xl font-black ${s.balance >= 0 ? 'text-emerald-600 bg-emerald-50/25' : 'text-red-500 bg-red-50/25'}`}>
+                                    <td className={`p-8 text-center text-3xl font-black ${s.balance >= 0 ? 'text-emerald-600 bg-emerald-50/30' : 'text-red-500 bg-red-50/30'}`}>
                                         {s.balance > 0 ? `+${s.balance.toFixed(1)}` : s.balance.toFixed(1)}
                                     </td>
-                                </tr>
-                            ))}
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-        );
-    };
-
-    // --- TAB TIẾT DẠY HÀNG TUẦN ---
-    const WeeklyTab = () => {
-        const [tempLogs, setTempLogs] = useState(data.weeklyData[currentWeek] || {});
-        return (
-            <div className="p-8">
-                <div className="flex flex-col md:flex-row justify-between items-center mb-12 gap-6">
-                    <div className="flex items-center gap-6 bg-white border-2 border-slate-100 p-4 rounded-[2.5rem] shadow-sm">
-                        <button onClick={() => setCurrentWeek(Math.max(1, currentWeek-1))} className="p-4 hover:bg-slate-100 rounded-2xl"><ChevronLeft/></button>
-                        <div className="px-10 text-center"><div className="text-[10px] font-black text-blue-500 uppercase tracking-widest mb-1">CHỌN TUẦN</div><div className="text-4xl font-black tracking-tighter">Tuần {currentWeek}</div></div>
-                        <button onClick={() => setCurrentWeek(currentWeek+1)} className="p-4 hover:bg-slate-100 rounded-2xl"><ChevronRight/></button>
-                    </div>
-                    <button onClick={() => { updateData({ weeklyData: {...data.weeklyData, [currentWeek]: tempLogs} }); setSyncStatus({message: 'Đã lưu tuần '+currentWeek, type: 'success'}); setTimeout(()=>setSyncStatus({message:'',type:''}),2000); }} className="bg-blue-600 text-white px-12 py-5 rounded-[2rem] font-black shadow-xl hover:bg-blue-700 transition-all">LƯU TIẾT DẠY</button>
-                </div>
-                <div className="bg-white rounded-[4rem] border-2 border-slate-50 overflow-hidden shadow-sm">
-                    <table className="w-full text-left">
-                        <thead className="bg-slate-50 border-b text-[10px] font-black uppercase text-slate-400">
-                            <tr><th className="p-10">Giáo viên</th><th className="p-10 text-center">Thực dạy tuần {currentWeek}</th></tr>
-                        </thead>
-                        <tbody>
-                            {data.teachers.map((t: any) => (
-                                <tr key={t.id} className="border-b hover:bg-slate-50/50 transition-all">
-                                    <td className="p-10"><div className="font-black text-slate-700 text-2xl">{t.name}</div><div className="text-[9px] font-black text-slate-300 uppercase mt-2 italic tracking-widest">ĐỊNH MỨC THỰC: {data.standardQuota - getTeacherReduction(t.roles)} TIẾT</div></td>
-                                    <td className="p-10"><input type="number" step="0.5" className="w-40 mx-auto block text-center p-8 bg-emerald-50 rounded-[2.5rem] font-black text-5xl text-emerald-700 outline-none shadow-inner" value={tempLogs[t.id] || 0} onChange={e => setTempLogs({...tempLogs, [t.id]: parseFloat(e.target.value) || 0})}/></td>
                                 </tr>
                             ))}
                         </tbody>
@@ -464,39 +509,39 @@ const App = () => {
     // --- TAB CẤU HÌNH ---
     const ConfigTab = () => (
         <div className="p-8 animate-fadeIn">
-            <h2 className="text-3xl font-black mb-10 text-slate-800 tracking-tighter">Cấu hình Hệ thống</h2>
+            <h2 className="text-3xl font-black mb-10 text-slate-800 tracking-tighter">Cấu hình Cơ bản</h2>
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
                 <div className="space-y-10">
                     <div className="bg-white p-10 rounded-[3.5rem] border-2 border-slate-100 shadow-sm">
-                        <label className="block text-[11px] font-black text-slate-400 uppercase mb-5 tracking-widest">Định mức chuẩn THCS (Tiết/Tuần)</label>
+                        <label className="block text-[11px] font-black text-slate-400 uppercase mb-5 tracking-widest">Định mức chuẩn (Tiết/Tuần)</label>
                         <input type="number" value={data.standardQuota} onChange={e => updateData({standardQuota: parseFloat(e.target.value)})} className="text-8xl font-black text-blue-600 outline-none w-full bg-transparent tracking-tighter"/>
                     </div>
                     <div className="bg-white p-10 rounded-[3.5rem] border-2 border-slate-100 shadow-sm">
-                        <h3 className="font-black text-slate-700 uppercase text-xs tracking-widest mb-8 flex items-center gap-3"><Briefcase className="text-blue-500"/> Danh mục Kiêm nhiệm</h3>
+                        <h3 className="font-black text-slate-700 uppercase text-xs tracking-widest mb-8 flex items-center gap-3"><Briefcase className="text-blue-500"/> Chức vụ & Giảm tiết</h3>
                         <div className="space-y-4">
                             {data.roles.map((r: any, i: number) => (
                                 <div key={r.id} className="flex justify-between items-center py-4 border-b border-slate-50">
                                     <span className="font-black text-slate-600 uppercase text-[11px]">{r.name}</span>
                                     <div className="flex items-center gap-4">
                                         <span className="text-[10px] font-black text-slate-300">GIẢM</span>
-                                        <input type="number" className="w-16 p-2 bg-slate-50 rounded-xl text-center font-black text-blue-600 outline-none focus:ring-2 focus:ring-blue-100" value={r.reduction} onChange={e => {
+                                        <input type="number" className="w-16 p-2 bg-slate-50 rounded-xl text-center font-black text-blue-600" value={r.reduction} onChange={e => {
                                             const nr = [...data.roles]; nr[i].reduction = parseFloat(e.target.value); updateData({roles: nr});
                                         }}/>
                                         <button onClick={() => updateData({roles: data.roles.filter((x: any) => x.id !== r.id)})} className="text-slate-200 hover:text-red-400"><X size={16}/></button>
                                     </div>
                                 </div>
                             ))}
-                            <button onClick={() => updateData({roles: [...data.roles, {id: Date.now().toString(), name: 'Việc mới', reduction: 0}]})} className="w-full p-4 border-2 border-dashed border-slate-100 rounded-2xl text-[10px] font-black text-slate-300 uppercase hover:border-blue-200 hover:text-blue-400 transition-all">+ Thêm kiêm nhiệm mới</button>
+                            <button onClick={() => updateData({roles: [...data.roles, {id: Date.now().toString(), name: 'Việc mới', reduction: 0}]})} className="w-full p-4 border-2 border-dashed border-slate-100 rounded-2xl text-[10px] font-black text-slate-300 uppercase hover:border-blue-200 hover:text-blue-400">+ Thêm việc mới</button>
                         </div>
                     </div>
                 </div>
                 <div className="bg-white p-10 rounded-[3.5rem] border-2 border-slate-100 shadow-sm flex flex-col">
-                   <h3 className="font-black text-slate-700 uppercase text-xs tracking-widest mb-8 flex items-center gap-3"><Book className="text-blue-500"/> Định mức Tiết theo Môn</h3>
+                   <h3 className="font-black text-slate-700 uppercase text-xs tracking-widest mb-8 flex items-center gap-3"><Book className="text-blue-500"/> Số tiết/Môn học (Theo khối)</h3>
                    <div className="space-y-4 max-h-[600px] overflow-y-auto pr-4 custom-scrollbar">
                        {data.subjectConfigs.map((s: any, i: number) => (
-                           <div key={i} className="flex justify-between items-center py-4 border-b border-slate-50 group hover:bg-slate-50 rounded-2xl px-4 transition-all">
+                           <div key={i} className="flex justify-between items-center py-4 border-b border-slate-50 group hover:bg-slate-50 rounded-2xl px-4">
                                <span className="font-black text-slate-600 uppercase text-[11px]">{s.name}</span>
-                               <input type="number" step="0.5" className="w-20 p-3 bg-slate-100 rounded-xl text-center font-black text-blue-600 outline-none focus:ring-2 focus:ring-blue-100" value={s.periods} onChange={e => {
+                               <input type="number" step="0.5" className="w-20 p-3 bg-slate-100 rounded-xl text-center font-black text-blue-600" value={s.periods} onChange={e => {
                                    const nc = [...data.subjectConfigs]; nc[i].periods = parseFloat(e.target.value); updateData({subjectConfigs: nc});
                                }}/>
                            </div>
@@ -513,7 +558,7 @@ const App = () => {
                 <div className="container mx-auto flex flex-col md:flex-row justify-between items-center gap-8">
                     <div className="flex items-center gap-5">
                         <div className="bg-blue-600 p-4 rounded-[1.5rem] text-white shadow-2xl rotate-3"><LayoutDashboard size={32}/></div>
-                        <h1 className="font-black text-3xl tracking-tighter text-slate-800 uppercase">THCS PRO <span className="text-blue-600 text-sm align-top italic">v4.5</span></h1>
+                        <h1 className="font-black text-3xl tracking-tighter text-slate-800 uppercase">THCS PRO <span className="text-blue-600 text-sm align-top italic">v5.0</span></h1>
                     </div>
                     <nav className="flex gap-2 bg-slate-100 p-2 rounded-[2.5rem] overflow-x-auto no-scrollbar max-w-full">
                         {[
