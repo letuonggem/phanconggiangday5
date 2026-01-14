@@ -5,11 +5,11 @@ import {
     LayoutDashboard, Users, CalendarDays, FileText, Settings, 
     Trash2, ChevronLeft, ChevronRight, ChevronDown,
     Plus, FileUp, Edit3, Check,
-    AlertTriangle, Copy, RefreshCcw, FileDown, PlusCircle, Book, Info, CheckCircle2, X
+    AlertTriangle, Copy, RefreshCcw, FileDown, PlusCircle, Book, Info, CheckCircle2, X, Square, CheckSquare
 } from 'lucide-react';
 
 // --- CẤU HÌNH HỆ THỐNG ---
-const STORAGE_KEY = 'thcs_teaching_mgmt_v7_3_pro';
+const STORAGE_KEY = 'thcs_teaching_mgmt_v7_4_pro';
 
 const DEFAULT_SUBJECT_CONFIGS = [
     { name: 'Toán', p6: 4, p7: 4, p8: 4, p9: 4 },
@@ -56,13 +56,17 @@ const LocalNumericInput = ({ value, onChange, className, step = 0.5 }: any) => {
     );
 };
 
-const LocalAssignmentInput = ({ value, onSave, hasConflict }: any) => {
+const LocalAssignmentInput = ({ value, onSave, hasConflict, onInvalid }: any) => {
     const [local, setLocal] = useState(value);
     useEffect(() => { setLocal(value); }, [value]);
 
     const handleCommit = () => {
         if (local === value) return;
+        
+        // 1. Tự động chuẩn hóa: Viết hoa và xóa khoảng trắng dư
         const normalized = local.toUpperCase().replace(/\s{2,}/g, ' ').trim();
+        
+        // 2. Kiểm tra định dạng (Phải là Môn: Lớp)
         const parts = normalized.split(';');
         for (let part of parts) {
             const colonIdx = part.indexOf(':');
@@ -70,8 +74,9 @@ const LocalAssignmentInput = ({ value, onSave, hasConflict }: any) => {
                 const classes = part.substring(colonIdx + 1).split(',').map(c => c.trim()).filter(c => c);
                 for (let cls of classes) {
                     if (!isValidClassName(cls)) {
-                        alert(`LỖI ĐỊNH DẠNG: Lớp "${cls}" không hợp lệ!\n\nMọi lớp học tại THCS phải bắt đầu bằng khối (6, 7, 8, hoặc 9).`);
-                        setLocal(value);
+                        alert(`LỖI NHẬP LIỆU: Lớp "${cls}" không đúng định dạng THCS!\n\nTên lớp phải bắt đầu bằng khối (6, 7, 8 hoặc 9).\nCác lớp như 12A1, MA3, 10B... sẽ bị từ chối.`);
+                        setLocal(value); // Trả về giá trị cũ
+                        if (onInvalid) onInvalid();
                         return;
                     }
                 }
@@ -88,7 +93,7 @@ const LocalAssignmentInput = ({ value, onSave, hasConflict }: any) => {
             onChange={(e) => setLocal(e.target.value)}
             onBlur={handleCommit}
             onKeyDown={(e) => { if(e.key === 'Enter') handleCommit(); }}
-            placeholder="Môn: Lớp1, Lớp2; Môn2: Lớp3"
+            placeholder="Môn: Lớp1, Lớp2..."
         />
     );
 };
@@ -154,11 +159,13 @@ const App = () => {
         const [isAdding, setIsAdding] = useState(false);
         const [newTeacherRoles, setNewTeacherRoles] = useState<string[]>([]);
         const [showRoleDropdown, setShowRoleDropdown] = useState<boolean>(false);
+        const [selectedIds, setSelectedIds] = useState<string[]>([]);
         const fileRef = useRef<HTMLInputElement>(null);
         
         const weekData = getWeekData(currentWeek);
         const { teachers, assignments, logs = {} } = weekData;
 
+        // Kiểm tra trùng lớp gắt gao
         const classConflicts = useMemo(() => {
             const classToTeachers: Record<string, string[]> = {};
             Object.entries(assignments).forEach(([tId, assignStr]) => {
@@ -179,6 +186,7 @@ const App = () => {
         }, [assignments, teachers]);
 
         const saveAssignment = (tId: string, val: string) => {
+            // Kiểm tra trùng lớp trước khi lưu
             const assignedByOthers = new Set<string>();
             Object.entries(assignments).forEach(([id, str]) => {
                 if (id === tId || !str) return;
@@ -193,51 +201,44 @@ const App = () => {
             });
             for (const cls of currentClasses) {
                 if (assignedByOthers.has(cls)) {
-                    alert(`XUNG ĐỘT: Lớp ${cls} đã được phân công cho giáo viên khác dạy!`);
+                    alert(`CẢNH BÁO XUNG ĐỘT: Lớp ${cls} đã được phân công cho giáo viên khác dạy!\n\nHệ thống sẽ không lưu thay đổi này để tránh sai sót.`);
                     return;
                 }
             }
             updateWeekData(currentWeek, { assignments: { ...assignments, [tId]: val } });
         };
 
-        const copyFromPrevious = () => {
+        const copySelectedFromPrevious = () => {
             if (currentWeek <= 1) return alert("Đây là tuần đầu tiên!");
             const prev = data.weeklyRecords[currentWeek - 1];
             if (!prev) return alert("Tuần trước chưa có dữ liệu!");
-            if (confirm(`Hệ thống sẽ sao chép toàn bộ Phân công & Tiết dạy bù từ Tuần ${currentWeek - 1} sang Tuần ${currentWeek}.`)) {
-                updateWeekData(currentWeek, { 
-                    teachers: JSON.parse(JSON.stringify(prev.teachers)), 
-                    assignments: JSON.parse(JSON.stringify(prev.assignments)),
-                    logs: JSON.parse(JSON.stringify(prev.logs || {}))
-                });
-            }
+            if (selectedIds.length === 0) return alert("Vui lòng tích chọn giáo viên cần sao chép!");
+
+            const newAssignments = { ...assignments };
+            const newLogs = { ...logs };
+            const currentTeacherIds = teachers.map((t:any) => t.id);
+
+            selectedIds.forEach(id => {
+                if (prev.assignments[id]) {
+                    newAssignments[id] = prev.assignments[id];
+                    if (prev.logs && prev.logs[id]) {
+                        newLogs[id] = { ...prev.logs[id] };
+                    }
+                }
+            });
+
+            updateWeekData(currentWeek, { assignments: newAssignments, logs: newLogs });
+            alert(`Đã sao chép phân công cho ${selectedIds.length} giáo viên từ tuần ${currentWeek - 1}.`);
+            setSelectedIds([]); // Reset selection
         };
 
-        const handleExportTemplate = () => {
-            const header = "Họ tên,Môn dạy,Lớp dạy,Chức vụ (Cách dấu phẩy)\n";
-            const blob = new Blob(["\uFEFF" + header + "Nguyễn Văn A,Toán,\"6A1, 6A2\",Chủ nhiệm"], { type: 'text/csv;charset=utf-8;' });
-            const link = document.createElement("a");
-            link.href = URL.createObjectURL(blob); link.download = "Mau_Phan_Cong_THCS.csv"; link.click();
+        const toggleSelection = (id: string) => {
+            setSelectedIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
         };
 
-        const handleImportExcel = (e: any) => {
-            const file = e.target.files[0];
-            if (!file) return;
-            const reader = new FileReader();
-            reader.onload = (evt: any) => {
-                // @ts-ignore
-                const wb = XLSX.read(evt.target.result, {type:'binary'});
-                // @ts-ignore
-                const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
-                const newT = [...teachers]; const newA = { ...assignments };
-                rows.forEach((row: any, i: number) => {
-                    const id = Date.now().toString() + i;
-                    newT.push({ id, name: row['Họ tên'] || 'GV Mới', roles: (row['Chức vụ'] || '').toString().split(',').map((s:any)=>s.trim()).filter((s:any)=>s) });
-                    newA[id] = `${row['Môn dạy'] || ''}: ${row['Lớp dạy'] || ''}`;
-                });
-                updateWeekData(currentWeek, { teachers: newT, assignments: newA });
-            };
-            reader.readAsBinaryString(file);
+        const toggleAll = () => {
+            if (selectedIds.length === teachers.length) setSelectedIds([]);
+            else setSelectedIds(teachers.map((t:any) => t.id));
         };
 
         const toggleRole = (e: React.MouseEvent, roleName: string) => {
@@ -253,47 +254,49 @@ const App = () => {
             <div className="p-8 animate-fadeIn">
                 <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-8 mb-12">
                     <div className="flex items-center gap-6 bg-white border-2 border-slate-100 p-4 rounded-[2.5rem] shadow-sm">
-                        <button onClick={() => setCurrentWeek(Math.max(1, currentWeek-1))} className="p-4 hover:bg-slate-100 rounded-2xl transition-colors text-slate-400 hover:text-blue-600"><ChevronLeft/></button>
+                        <button onClick={() => { setCurrentWeek(Math.max(1, currentWeek-1)); setSelectedIds([]); }} className="p-4 hover:bg-slate-100 rounded-2xl transition-colors text-slate-400 hover:text-blue-600"><ChevronLeft/></button>
                         <div className="px-10 text-center">
                             <div className="text-[10px] font-black text-blue-500 uppercase tracking-widest mb-1">TUẦN HỌC</div>
                             <div className="text-4xl font-black tracking-tighter text-slate-800">{currentWeek}</div>
                         </div>
-                        <button onClick={() => setCurrentWeek(currentWeek+1)} className="p-4 hover:bg-slate-100 rounded-2xl transition-colors text-slate-400 hover:text-blue-600"><ChevronRight/></button>
+                        <button onClick={() => { setCurrentWeek(currentWeek+1); setSelectedIds([]); }} className="p-4 hover:bg-slate-100 rounded-2xl transition-colors text-slate-400 hover:text-blue-600"><ChevronRight/></button>
                     </div>
                     <div className="flex flex-wrap gap-3">
-                        <button onClick={handleExportTemplate} className="bg-slate-50 text-slate-500 px-6 py-4 rounded-2xl flex items-center gap-2 font-bold hover:bg-slate-100 transition-all border border-slate-100"><FileDown size={20}/> Mẫu CSV</button>
+                        <button 
+                            onClick={copySelectedFromPrevious} 
+                            disabled={selectedIds.length === 0}
+                            className={`px-6 py-4 rounded-2xl flex items-center gap-2 font-bold shadow-lg transition-all ${selectedIds.length > 0 ? 'bg-indigo-600 text-white hover:bg-indigo-700' : 'bg-slate-100 text-slate-300 cursor-not-allowed'}`}
+                        >
+                            <Copy size={20}/> Sao chép {selectedIds.length > 0 ? selectedIds.length : ''} GV đã chọn
+                        </button>
                         <button onClick={() => fileRef.current?.click()} className="bg-emerald-50 text-emerald-700 px-6 py-4 rounded-2xl flex items-center gap-2 font-bold shadow-sm hover:bg-emerald-100 transition-all border border-emerald-100"><FileUp size={20}/> Nhập Excel</button>
-                        <input type="file" ref={fileRef} className="hidden" onChange={handleImportExcel} accept=".xlsx,.xls,.csv"/>
-                        <button onClick={copyFromPrevious} className="bg-indigo-600 text-white px-6 py-4 rounded-2xl flex items-center gap-2 font-bold shadow-lg hover:bg-indigo-700 transition-all"><Copy size={20}/> Sao chép tuần {currentWeek-1}</button>
+                        <input type="file" ref={fileRef} className="hidden" onChange={(e) => {}} accept=".xlsx,.xls,.csv"/>
                         <button onClick={() => { setIsAdding(!isAdding); setNewTeacherRoles([]); setShowRoleDropdown(false); }} className="bg-blue-600 text-white px-8 py-4 rounded-2xl flex items-center gap-2 font-black shadow-xl hover:bg-blue-700 transition-all uppercase tracking-widest text-xs">{isAdding ? 'Đóng Form' : 'Thêm GV'}</button>
                     </div>
                 </div>
 
                 {isAdding && (
                     <div className="mb-12 bg-white border-2 border-blue-100 p-10 rounded-[3.5rem] animate-fadeIn shadow-2xl relative">
-                        {/* Thanh màu bên trái được thay đổi cách hiển thị để không cần overflow-hidden */}
                         <div className="absolute top-0 left-0 w-2 h-full bg-blue-600 rounded-l-[3.5rem]"></div>
-                        
                         <div className="flex items-center gap-3 mb-8">
                             <PlusCircle className="text-blue-600" size={24} />
-                            <h3 className="text-lg font-black text-slate-800 uppercase tracking-tight">Thêm giáo viên mới vào danh sách tuần {currentWeek}</h3>
+                            <h3 className="text-lg font-black text-slate-800 uppercase tracking-tight">Thêm giáo viên mới vào tuần {currentWeek}</h3>
                         </div>
-
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-10 mb-10">
                             <div className="space-y-3">
                                 <label className="text-[10px] font-black uppercase text-slate-400 ml-2 tracking-widest">Họ tên GV</label>
-                                <input type="text" placeholder="Ví dụ: Nguyễn Văn A" className="w-full p-5 rounded-2xl bg-slate-50 border-2 border-transparent focus:border-blue-200 focus:bg-white outline-none font-bold transition-all shadow-inner" id="new-name"/>
+                                <input type="text" placeholder="Ví dụ: Nguyễn Văn A" className="w-full p-5 rounded-2xl bg-slate-50 border-2 border-transparent focus:border-blue-200 focus:bg-white outline-none font-bold transition-all shadow-inner uppercase" id="new-name"/>
                             </div>
                             <div className="space-y-3">
-                                <label className="text-[10px] font-black uppercase text-slate-400 ml-2 tracking-widest">Môn học chủ đạo</label>
+                                <label className="text-[10px] font-black uppercase text-slate-400 ml-2 tracking-widest">Môn học</label>
                                 <select className="w-full p-5 rounded-2xl bg-slate-50 border-2 border-transparent focus:border-blue-200 focus:bg-white outline-none font-bold transition-all shadow-inner cursor-pointer" id="new-sub">
                                     <option value="">-- Chọn môn dạy --</option>
                                     {data.subjectConfigs.map((s: any) => <option key={s.name} value={s.name}>{s.name}</option>)}
                                 </select>
                             </div>
                             <div className="space-y-3">
-                                <label className="text-[10px] font-black uppercase text-slate-400 ml-2 tracking-widest">Lớp giảng dạy</label>
-                                <input type="text" placeholder="Ví dụ: 6A, 7B, 8C" className="w-full p-5 rounded-2xl bg-slate-50 border-2 border-transparent focus:border-blue-200 focus:bg-white outline-none font-bold transition-all shadow-inner" id="new-cls"/>
+                                <label className="text-[10px] font-black uppercase text-slate-400 ml-2 tracking-widest">Lớp dạy (vd: 6A, 7B)</label>
+                                <input type="text" placeholder="Ví dụ: 6A, 7B" className="w-full p-5 rounded-2xl bg-slate-50 border-2 border-transparent focus:border-blue-200 focus:bg-white outline-none font-bold transition-all shadow-inner uppercase" id="new-cls"/>
                             </div>
                             <div className="space-y-3 relative">
                                 <label className="text-[10px] font-black uppercase text-slate-400 ml-2 tracking-widest">Chức vụ kiêm nhiệm</label>
@@ -303,7 +306,6 @@ const App = () => {
                                 </div>
                                 {showRoleDropdown && (
                                     <div className="absolute top-[105%] left-0 w-full mt-2 bg-white rounded-3xl shadow-[0_20px_50px_rgba(0,0,0,0.15)] border border-slate-100 z-[100] p-3 max-h-72 overflow-y-auto animate-fadeIn">
-                                        <div className="px-3 py-2 text-[9px] font-black text-slate-400 uppercase tracking-widest border-b mb-2">Danh sách chức vụ</div>
                                         {data.roles.map((r: any) => (
                                             <div key={r.id} onClick={(e) => toggleRole(e, r.name)} className={`p-4 rounded-2xl mb-1 cursor-pointer flex items-center justify-between transition-all ${newTeacherRoles.includes(r.name) ? 'bg-blue-600 text-white shadow-lg' : 'hover:bg-blue-50 text-slate-600'}`}>
                                                 <span className="font-bold text-xs">{r.name}</span>
@@ -314,33 +316,35 @@ const App = () => {
                                 )}
                             </div>
                         </div>
-
                         <div className="flex justify-end pt-4 border-t border-slate-50">
                             <button onClick={() => {
                                 const name = (document.getElementById('new-name') as HTMLInputElement).value;
                                 const sub = (document.getElementById('new-sub') as HTMLSelectElement).value;
                                 const clsStr = (document.getElementById('new-cls') as HTMLInputElement).value;
-                                if (!name || !sub || !clsStr) return alert("Vui lòng nhập đầy đủ họ tên, môn và lớp!");
-                                const classes = clsStr.split(',').map(c => c.trim()).filter(c => c);
-                                for (let c of classes) if(!isValidClassName(c)) return alert(`Lớp "${c}" không hợp lệ. Tên lớp phải bắt đầu bằng khối (6, 7, 8 hoặc 9).`);
+                                if (!name || !sub || !clsStr) return alert("Vui lòng nhập đầy đủ thông tin!");
+                                const classes = clsStr.split(',').map(c => c.trim().toUpperCase()).filter(c => c);
+                                for (let c of classes) if(!isValidClassName(c)) return alert(`Lớp "${c}" sai định dạng khối 6-9!`);
                                 const tId = Date.now().toString();
                                 updateWeekData(currentWeek, {
-                                    teachers: [{ id: tId, name, roles: [...newTeacherRoles] }, ...teachers],
-                                    assignments: { ...assignments, [tId]: `${sub}: ${clsStr.toUpperCase()}` }
+                                    teachers: [{ id: tId, name: name.toUpperCase(), roles: [...newTeacherRoles] }, ...teachers],
+                                    assignments: { ...assignments, [tId]: `${sub}: ${classes.join(', ')}` }
                                 });
                                 setIsAdding(false); setNewTeacherRoles([]); setShowRoleDropdown(false);
-                            }} className="w-full lg:w-1/3 bg-blue-600 text-white p-5 rounded-2xl font-black shadow-xl hover:bg-blue-700 active:scale-95 transition-all uppercase tracking-widest text-xs flex items-center justify-center gap-3">
-                                <CheckCircle2 size={20} /> HOÀN TẤT THÊM MỚI
-                            </button>
+                            }} className="w-full lg:w-1/3 bg-blue-600 text-white p-5 rounded-2xl font-black shadow-xl hover:bg-blue-700 active:scale-95 transition-all uppercase tracking-widest text-xs flex items-center justify-center gap-3">XÁC NHẬN THÊM</button>
                         </div>
                     </div>
                 )}
 
-                <div className="bg-white rounded-[3.5rem] border-2 border-slate-50 overflow-hidden shadow-sm overflow-x-auto">
+                <div className="bg-white rounded-[3.5rem] border-2 border-slate-50 shadow-sm overflow-x-auto">
                     <table className="w-full text-left min-w-[1000px]">
                         <thead className="bg-slate-50 border-b text-[10px] font-black uppercase text-slate-400">
                             <tr>
-                                <th className="p-8 tracking-widest">Giáo viên / Kiêm nhiệm</th>
+                                <th className="p-8 w-16 text-center">
+                                    <button onClick={toggleAll} className="text-slate-300 hover:text-blue-500 transition-colors">
+                                        {selectedIds.length === teachers.length && teachers.length > 0 ? <CheckSquare size={22} className="text-blue-600"/> : <Square size={22}/>}
+                                    </button>
+                                </th>
+                                <th className="p-8 tracking-widest">Giáo viên / Chức vụ</th>
                                 <th className="p-8 w-1/3 tracking-widest">Phân công TKB (Môn: Lớp)</th>
                                 <th className="p-8 text-center tracking-widest">Tiết TKB</th>
                                 <th className="p-8 text-center text-orange-600 tracking-widest">Dạy bù</th>
@@ -353,15 +357,21 @@ const App = () => {
                                 const assignment = assignments[t.id] || "";
                                 const tkbCount = getTKBPeriods(assignment);
                                 const log = logs[t.id] || { bu: 0, tang: 0 };
+                                const isSelected = selectedIds.includes(t.id);
                                 const teacherClasses = assignment.split(';').flatMap((p: string) => {
                                     const cIdx = p.indexOf(':'); return cIdx === -1 ? [] : p.substring(cIdx+1).split(',').map(c => c.trim().toUpperCase()).filter(c => c);
                                 });
                                 const hasConflict = teacherClasses.some(c => !!classConflicts[c]);
 
                                 return (
-                                    <tr key={t.id} className="border-b hover:bg-slate-50/30 transition-all group">
+                                    <tr key={t.id} className={`border-b transition-all group ${isSelected ? 'bg-blue-50/30' : 'hover:bg-slate-50/30'}`}>
+                                        <td className="p-8 text-center">
+                                            <button onClick={() => toggleSelection(t.id)} className="text-slate-300 hover:text-blue-500 transition-colors">
+                                                {isSelected ? <CheckSquare size={22} className="text-blue-600"/> : <Square size={22}/>}
+                                            </button>
+                                        </td>
                                         <td className="p-8">
-                                            <div className="font-black text-slate-800 text-xl tracking-tight">{t.name}</div>
+                                            <div className="font-black text-slate-800 text-xl tracking-tight uppercase">{t.name}</div>
                                             <div className="flex flex-wrap gap-1 mt-1">{(t.roles || []).map((r: string) => <span key={r} className="text-[8px] font-black uppercase bg-blue-50 text-blue-500 px-2 py-0.5 rounded-md border border-blue-100">{r}</span>)}</div>
                                         </td>
                                         <td className="p-8">
@@ -370,45 +380,45 @@ const App = () => {
                                                 onSave={(v: string) => saveAssignment(t.id, v)}
                                                 hasConflict={hasConflict}
                                             />
-                                            {hasConflict && <div className="text-[9px] font-black text-red-500 mt-2 uppercase flex items-center gap-1"><AlertTriangle size={12}/> Trùng lịch dạy!</div>}
+                                            {hasConflict && <div className="text-[9px] font-black text-red-500 mt-2 uppercase flex items-center gap-1"><AlertTriangle size={12}/> Trùng lớp: {teacherClasses.filter(c => !!classConflicts[c]).join(', ')}</div>}
                                         </td>
                                         <td className="p-8 text-center font-black text-slate-800 text-3xl tracking-tighter">{tkbCount.toFixed(1)}</td>
                                         <td className="p-8">
                                             <LocalNumericInput 
                                                 value={log.bu} 
                                                 onChange={(val: number) => updateWeekData(currentWeek, { logs: { ...logs, [t.id]: { ...log, bu: val } } })}
-                                                className="w-20 mx-auto block text-center p-4 bg-orange-50 border-2 border-orange-100 rounded-2xl font-black text-orange-700 outline-none hover:border-orange-300"
+                                                className="w-20 mx-auto block text-center p-4 bg-orange-50 border-2 border-orange-100 rounded-2xl font-black text-orange-700 outline-none hover:border-orange-300 transition-all shadow-sm focus:bg-white"
                                             />
                                         </td>
                                         <td className="p-8">
                                             <LocalNumericInput 
                                                 value={log.tang} 
                                                 onChange={(val: number) => updateWeekData(currentWeek, { logs: { ...logs, [t.id]: { ...log, tang: val } } })}
-                                                className="w-20 mx-auto block text-center p-4 bg-orange-50 border-2 border-orange-100 rounded-2xl font-black text-orange-700 outline-none hover:border-orange-300"
+                                                className="w-20 mx-auto block text-center p-4 bg-orange-50 border-2 border-orange-100 rounded-2xl font-black text-orange-700 outline-none hover:border-orange-300 transition-all shadow-sm focus:bg-white"
                                             />
                                         </td>
                                         <td className="p-8 text-right opacity-0 group-hover:opacity-100 transition-opacity">
-                                            <button onClick={() => { if(confirm("Gỡ giáo viên này khỏi tuần này?")) updateWeekData(currentWeek, { teachers: teachers.filter((x: any) => x.id !== t.id) }); }} className="text-slate-300 hover:text-red-500 p-4 hover:bg-red-50 rounded-2xl transition-all"><Trash2 size={22}/></button>
+                                            <button onClick={() => { if(confirm("Gỡ giáo viên này khỏi tuần " + currentWeek + "?")) updateWeekData(currentWeek, { teachers: teachers.filter((x: any) => x.id !== t.id) }); }} className="text-slate-300 hover:text-red-500 p-4 hover:bg-red-50 rounded-2xl transition-all"><Trash2 size={22}/></button>
                                         </td>
                                     </tr>
                                 );
                             })}
                         </tbody>
                     </table>
-                    {teachers.length === 0 && <div className="py-24 text-center text-slate-300 italic font-black uppercase tracking-widest">Danh sách trống</div>}
+                    {teachers.length === 0 && <div className="py-32 text-center text-slate-300 italic font-black uppercase tracking-widest">Tuần này chưa có phân công giảng dạy</div>}
                 </div>
             </div>
         );
     };
 
-    // --- CÁC TAB KHÁC GIỮ NGUYÊN ---
+    // --- CÁC TAB KHÁC ---
     const WeeklyTab = () => {
         const stats = useMemo(() => {
             const aggregates: Record<string, any> = {};
             for (let w = startRange; w <= endRange; w++) {
                 const record = data.weeklyRecords[w]; if (!record) continue;
                 record.teachers.forEach((t: any) => {
-                    const key = t.name.trim();
+                    const key = t.name.trim().toUpperCase();
                     if (!aggregates[key]) aggregates[key] = { name: t.name, tkb: 0, bu: 0, tang: 0 };
                     const log = record.logs?.[t.id] || { bu: 0, tang: 0 };
                     aggregates[key].tkb += (log.actual !== undefined ? log.actual : getTKBPeriods(record.assignments[t.id] || ""));
@@ -424,23 +434,24 @@ const App = () => {
                     <div className="flex items-center gap-4 bg-white p-6 rounded-[3rem] border-2 border-slate-100 shadow-sm">
                         <div className="flex items-center gap-3">
                             <label className="text-[10px] font-black uppercase text-blue-500 tracking-widest">Từ tuần</label>
-                            <input type="number" min="1" value={startRange} onChange={e => setStartRange(parseInt(e.target.value) || 1)} className="w-20 p-4 bg-slate-50 rounded-2xl font-black text-center text-2xl border-none outline-none focus:ring-4 focus:ring-blue-50"/>
+                            <input type="number" min="1" value={startRange} onChange={e => setStartRange(parseInt(e.target.value) || 1)} className="w-20 p-4 bg-slate-50 rounded-2xl font-black text-center text-2xl border-none outline-none focus:ring-4 focus:ring-blue-50 transition-all"/>
                         </div>
                         <ChevronRight className="text-slate-200" size={32} />
                         <div className="flex items-center gap-3">
                             <label className="text-[10px] font-black uppercase text-blue-500 tracking-widest">Đến tuần</label>
-                            <input type="number" min={startRange} value={endRange} onChange={e => setEndRange(parseInt(e.target.value) || 1)} className="w-20 p-4 bg-slate-50 rounded-2xl font-black text-center text-2xl border-none outline-none focus:ring-4 focus:ring-blue-50"/>
+                            <input type="number" min={startRange} value={endRange} onChange={e => setEndRange(parseInt(e.target.value) || 1)} className="w-20 p-4 bg-slate-50 rounded-2xl font-black text-center text-2xl border-none outline-none focus:ring-4 focus:ring-blue-50 transition-all"/>
                         </div>
                     </div>
                     <div className="text-right">
-                        <h2 className="text-3xl font-black text-slate-800 uppercase italic tracking-tighter italic">Lũy kế Thực dạy</h2>
+                        <h2 className="text-3xl font-black text-slate-800 uppercase italic tracking-tighter">Lũy kế Thực dạy</h2>
+                        <p className="text-slate-400 font-bold text-xs uppercase tracking-widest mt-1">Tổng hợp tiết dạy thực tế theo giáo viên</p>
                     </div>
                 </div>
                 <div className="bg-white rounded-[4rem] border-2 border-slate-50 overflow-hidden shadow-sm">
                     <table className="w-full text-left">
                         <thead className="bg-slate-50 border-b text-[10px] font-black uppercase text-slate-400">
                             <tr>
-                                <th className="p-10 tracking-widest">Giáo viên</th>
+                                <th className="p-10 tracking-widest">Họ và tên Giáo viên</th>
                                 <th className="p-10 text-center tracking-widest">Tổng Tiết TKB</th>
                                 <th className="p-10 text-center text-orange-600 tracking-widest">Tổng Dạy bù</th>
                                 <th className="p-10 text-center text-orange-600 tracking-widest">Tổng Tăng tiết/BD</th>
@@ -450,7 +461,7 @@ const App = () => {
                         <tbody>
                             {stats.map((s: any, i: number) => (
                                 <tr key={i} className="border-b hover:bg-slate-50/50 transition-colors">
-                                    <td className="p-10"><div className="font-black text-slate-700 text-2xl tracking-tight">{s.name}</div></td>
+                                    <td className="p-10"><div className="font-black text-slate-700 text-2xl tracking-tight uppercase">{s.name}</div></td>
                                     <td className="p-10 text-center font-black text-slate-400 text-3xl tracking-tighter">{s.tkb.toFixed(1)}</td>
                                     <td className="p-10 text-center font-black text-orange-600 text-3xl tracking-tighter">{s.bu.toFixed(1)}</td>
                                     <td className="p-10 text-center font-black text-orange-600 text-3xl tracking-tighter">{s.tang.toFixed(1)}</td>
@@ -471,7 +482,7 @@ const App = () => {
             for (let w = 1; w <= reportEnd; w++) {
                 const record = data.weeklyRecords[w]; if (!record) continue;
                 record.teachers.forEach((t: any) => {
-                    const key = t.name.trim();
+                    const key = t.name.trim().toUpperCase();
                     if (!teacherMap[key]) teacherMap[key] = { name: t.name, quota: 0, actual: 0, extra: 0 };
                     const q = Math.max(0, data.standardQuota - getTeacherReduction(t.roles));
                     teacherMap[key].quota += q;
@@ -486,7 +497,7 @@ const App = () => {
         return (
             <div className="p-10 animate-fadeIn">
                 <div className="flex justify-between items-center mb-12">
-                    <h2 className="text-4xl font-black text-slate-800 uppercase italic tracking-tighter italic">Báo cáo Quyết toán</h2>
+                    <h2 className="text-4xl font-black text-slate-800 uppercase italic tracking-tighter">Báo cáo Quyết toán</h2>
                     <div className="bg-slate-100 p-4 rounded-[2rem] flex items-center gap-4 border-2 border-slate-200">
                         <span className="text-[10px] font-black uppercase text-slate-400 ml-4 tracking-widest">Lũy kế đến tuần:</span>
                         <input type="number" value={reportEnd} onChange={e => setReportEnd(parseInt(e.target.value) || 1)} className="w-20 p-3 rounded-2xl text-center font-black text-blue-600 bg-white border-none outline-none focus:ring-4 focus:ring-blue-100"/>
@@ -497,15 +508,15 @@ const App = () => {
                         <thead className="bg-slate-50 border-b text-[10px] font-black uppercase text-slate-400">
                             <tr>
                                 <th className="p-8 tracking-widest">Giáo viên</th>
-                                <th className="p-8 text-center tracking-widest">Định mức</th>
-                                <th className="p-8 text-center tracking-widest">Thực dạy</th>
-                                <th className="p-8 text-center bg-blue-50/50 text-blue-700 tracking-widest">Chênh lệch</th>
+                                <th className="p-8 text-center tracking-widest">Định mức Lũy kế</th>
+                                <th className="p-8 text-center tracking-widest">Thực dạy Lũy kế</th>
+                                <th className="p-8 text-center bg-blue-50/50 text-blue-700 tracking-widest font-bold">Chênh lệch (Dôi dư)</th>
                             </tr>
                         </thead>
                         <tbody>
                             {stats.map((s: any, i: number) => (
                                 <tr key={i} className="border-b hover:bg-slate-50/50 transition-colors">
-                                    <td className="p-8"><div className="font-black text-slate-700 text-xl tracking-tight">{s.name}</div></td>
+                                    <td className="p-8"><div className="font-black text-slate-700 text-xl tracking-tight uppercase">{s.name}</div></td>
                                     <td className="p-8 text-center font-black text-slate-400 text-2xl tracking-tighter">{s.quota.toFixed(1)}</td>
                                     <td className="p-8 text-center font-black text-slate-800 text-2xl tracking-tighter">{s.total.toFixed(1)}</td>
                                     <td className={`p-8 text-center text-4xl font-black tracking-tighter ${s.balance >= 0 ? 'text-emerald-500' : 'text-red-500'}`}>
@@ -538,15 +549,15 @@ const App = () => {
                 <div className="grid grid-cols-1 xl:grid-cols-2 gap-12">
                     <div className="space-y-10">
                         <div className="bg-slate-50 p-10 rounded-[4rem] border border-slate-100 shadow-inner group transition-all hover:bg-white">
-                            <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-6 tracking-widest">Định mức THCS (Tiết/Tuần)</label>
+                            <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-6 tracking-widest">Định mức THCS chuẩn (Tiết/Tuần)</label>
                             <input type="number" value={data.standardQuota} onChange={e => updateData({standardQuota: parseFloat(e.target.value) || 0})} className="text-9xl font-black text-blue-600 bg-transparent outline-none w-full tracking-tighter transition-transform focus:scale-105"/>
                         </div>
-                        <div className="bg-blue-600 p-10 rounded-[4rem] text-white shadow-xl shadow-blue-500/20 relative overflow-hidden">
+                        <div className="bg-blue-600 p-10 rounded-[4rem] text-white shadow-xl shadow-blue-500/20 relative overflow-hidden transition-all hover:shadow-2xl">
                             <PlusCircle className="absolute -bottom-10 -right-10 text-white/10" size={200} />
                             <h3 className="font-black uppercase text-sm mb-6 flex items-center gap-3 tracking-widest">Thêm môn học mới</h3>
                             <div className="flex gap-4 relative z-10">
-                                <input type="text" placeholder="Tên môn..." value={newSubName} onChange={e => setNewSubName(e.target.value)} className="flex-1 p-5 rounded-2xl bg-white/10 border-2 border-white/20 text-white placeholder-white/40 font-bold outline-none focus:bg-white/20"/>
-                                <button onClick={addSubject} className="bg-white text-blue-600 px-8 py-5 rounded-2xl font-black hover:bg-blue-50 transition-all uppercase text-xs active:scale-95 shadow-lg">Thêm</button>
+                                <input type="text" placeholder="Tên môn học..." value={newSubName} onChange={e => setNewSubName(e.target.value)} className="flex-1 p-5 rounded-2xl bg-white/10 border-2 border-white/20 text-white placeholder-white/40 font-bold outline-none focus:bg-white/20 transition-all"/>
+                                <button onClick={addSubject} className="bg-white text-blue-600 px-8 py-5 rounded-2xl font-black hover:bg-blue-50 transition-all uppercase text-xs active:scale-95 shadow-lg">THÊM</button>
                             </div>
                         </div>
                     </div>
@@ -565,7 +576,7 @@ const App = () => {
                                                 <label className="block text-[9px] font-black text-slate-300 uppercase mb-1 tracking-widest">Khối {grade}</label>
                                                 <input type="number" step="0.5" value={s[`p${grade}`]} onChange={e => {
                                                     const nc = [...data.subjectConfigs]; nc[i][`p${grade}`] = parseFloat(e.target.value) || 0; updateData({subjectConfigs: nc});
-                                                }} className="w-full p-2 bg-slate-50 rounded-xl text-center font-black text-blue-500 border border-slate-100 outline-none focus:ring-2 focus:ring-blue-100"/>
+                                                }} className="w-full p-2 bg-slate-50 rounded-xl text-center font-black text-blue-500 border border-slate-100 outline-none focus:ring-2 focus:ring-blue-100 transition-all"/>
                                             </div>
                                         ))}
                                     </div>
@@ -585,8 +596,8 @@ const App = () => {
                     <div className="flex items-center gap-5">
                         <div className="bg-blue-600 p-4 rounded-[1.5rem] text-white shadow-2xl rotate-3 transition-transform hover:rotate-0"><LayoutDashboard size={32}/></div>
                         <div>
-                            <h1 className="font-black text-3xl tracking-tighter text-slate-800 uppercase italic">THCS PRO <span className="text-blue-600 text-sm align-top italic font-black">v7.3</span></h1>
-                            <p className="text-[9px] font-black uppercase text-slate-400 tracking-widest leading-none italic">UI/UX Re-Engineered</p>
+                            <h1 className="font-black text-3xl tracking-tighter text-slate-800 uppercase italic">THCS PRO <span className="text-blue-600 text-sm align-top italic font-black">v7.4</span></h1>
+                            <p className="text-[9px] font-black uppercase text-slate-400 tracking-widest leading-none italic">Senior Developer Edition</p>
                         </div>
                     </div>
                     <nav className="flex gap-2 bg-slate-100 p-2 rounded-[2.5rem] overflow-x-auto no-scrollbar max-w-full shadow-inner">
@@ -612,8 +623,8 @@ const App = () => {
                 </div>
             </main>
             <footer className="p-8 text-center">
-                <div className="text-[10px] font-black uppercase text-slate-300 tracking-[0.3em] flex items-center justify-center gap-3">
-                    <CheckCircle2 size={12}/> Hệ thống Quản lý Chuyên môn THCS (Phiên bản Senior)
+                <div className="text-[10px] font-black uppercase text-slate-300 tracking-[0.3em] flex items-center justify-center gap-3 italic">
+                    <CheckCircle2 size={12}/> Hệ thống Quản lý Chuyên môn THCS Bảo mật Cục bộ
                 </div>
             </footer>
         </div>
