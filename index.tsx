@@ -9,7 +9,7 @@ import {
 } from 'lucide-react';
 
 // --- CẤU HÌNH HỆ THỐNG ---
-const STORAGE_KEY = 'thcs_teaching_mgmt_v7_5_pro';
+const STORAGE_KEY = 'thcs_teaching_mgmt_v7_6_pro';
 
 const DEFAULT_SUBJECT_CONFIGS = [
     { name: 'Toán', p6: 4, p7: 4, p8: 4, p9: 4 },
@@ -40,7 +40,7 @@ const DEFAULT_ROLES = [
 
 const isValidClassName = (cls: string) => /^[6-9][A-Z0-9.\-_]*$/i.test(cls);
 
-// --- COMPONENTS TỐI ƯU HIỆU SUẤT ---
+// --- COMPONENTS TỐI ƯU ---
 
 const LocalNumericInput = ({ value, onChange, className, step = 0.5 }: any) => {
     const [local, setLocal] = useState(value);
@@ -56,7 +56,7 @@ const LocalNumericInput = ({ value, onChange, className, step = 0.5 }: any) => {
     );
 };
 
-const LocalAssignmentInput = ({ value, onSave, hasConflict, existingAssignments }: any) => {
+const LocalAssignmentInput = ({ value, onSave, existingAssignments }: any) => {
     const [local, setLocal] = useState(value);
     useEffect(() => { setLocal(value); }, [value]);
 
@@ -77,14 +77,13 @@ const LocalAssignmentInput = ({ value, onSave, hasConflict, existingAssignments 
         for (let part of parts) {
             const colonIdx = part.indexOf(':');
             if (colonIdx !== -1) {
-                const subName = part.substring(0, colonIdx).trim();
                 const clsPart = part.substring(colonIdx + 1);
                 const classes = clsPart.split(',').map(c => c.trim()).filter(c => c);
                 
                 for (let cls of classes) {
                     // 2. Chặn nhập sai kiểu lớp (phải là 6-9)
                     if (!isValidClassName(cls)) {
-                        alert(`LỖI: Lớp "${cls}" không hợp lệ. Phải bắt đầu bằng 6, 7, 8 hoặc 9.`);
+                        alert(`LỖI NHẬP LIỆU: Lớp "${cls}" không hợp lệ.\nTên lớp tại THCS phải bắt đầu bằng khối 6, 7, 8 hoặc 9 (Ví dụ: 6A1, 7B, 9.2).`);
                         setLocal(value);
                         return;
                     }
@@ -96,7 +95,7 @@ const LocalAssignmentInput = ({ value, onSave, hasConflict, existingAssignments 
         // 3. Chặn lớp đã có phân công trước đó trong tuần
         for (const cls of allNewClasses) {
             if (existingAssignments[cls]) {
-                alert(`LỖI: Lớp ${cls} đã được phân công cho ${existingAssignments[cls]}. Không thể nhập trùng!`);
+                alert(`LỖI TRÙNG LẶP: Lớp ${cls} đã được phân công cho ${existingAssignments[cls]}.\nHệ thống không cho phép nhập trùng lớp dạy.`);
                 setLocal(value);
                 return;
             }
@@ -108,7 +107,7 @@ const LocalAssignmentInput = ({ value, onSave, hasConflict, existingAssignments 
     return (
         <input 
             type="text" 
-            className={`w-full p-4 rounded-xl border-none font-bold text-sm shadow-inner transition-all ${hasConflict ? 'bg-red-50 text-red-700 ring-2 ring-red-200' : 'bg-slate-50 text-slate-600 focus:ring-2 focus:ring-blue-100'}`} 
+            className="w-full p-4 rounded-xl border-none font-bold text-sm shadow-inner bg-slate-50 text-slate-600 focus:ring-2 focus:ring-blue-100 transition-all"
             value={local}
             onChange={(e) => setLocal(e.target.value)}
             onBlur={handleCommit}
@@ -180,12 +179,13 @@ const App = () => {
         const [newTeacherRoles, setNewTeacherRoles] = useState<string[]>([]);
         const [showRoleDropdown, setShowRoleDropdown] = useState<boolean>(false);
         const [selectedIds, setSelectedIds] = useState<string[]>([]);
+        const fileRef = useRef<HTMLInputElement>(null);
         
         const weekData = getWeekData(currentWeek);
         const prevWeekData = getWeekData(currentWeek - 1);
         const { teachers, assignments, logs = {} } = weekData;
 
-        // Bản đồ kiểm tra trùng lớp gắt gao
+        // Bản đồ kiểm tra trùng lớp
         const classToTeacherMap = useMemo(() => {
             const map: Record<string, string> = {};
             Object.entries(assignments).forEach(([tId, str]) => {
@@ -216,7 +216,6 @@ const App = () => {
             selectedIds.forEach(id => {
                 const prevT = prevWeekData.teachers.find((x:any) => x.id === id);
                 if (prevT) {
-                    // Chỉ thêm nếu giáo viên này chưa có trong tuần hiện tại
                     if (!teachers.some(t => t.id === id)) {
                         newTeachers.push({ ...prevT });
                     }
@@ -227,19 +226,46 @@ const App = () => {
 
             updateWeekData(currentWeek, { teachers: newTeachers, assignments: newAssignments, logs: newLogs });
             setSelectedIds([]);
-            alert("Đã sao chép thành công!");
+            alert("Đã sao chép phân công thành công!");
         };
 
         const toggleSelection = (id: string) => {
             setSelectedIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
         };
 
+        const handleExportTemplate = () => {
+            const header = "Họ tên,Môn dạy,Lớp dạy,Chức vụ (Cách dấu phẩy)\n";
+            const blob = new Blob(["\uFEFF" + header + "NGUYỄN VĂN A,Toán,\"6A1, 6A2\",Chủ nhiệm"], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement("a");
+            link.href = URL.createObjectURL(blob); link.download = "Mau_Phan_Cong_THCS.csv"; link.click();
+        };
+
+        const handleImportExcel = (e: any) => {
+            const file = e.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = (evt: any) => {
+                // @ts-ignore
+                const wb = XLSX.read(evt.target.result, {type:'binary'});
+                // @ts-ignore
+                const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
+                const newT = [...teachers]; const newA = { ...assignments };
+                rows.forEach((row: any, i: number) => {
+                    const id = Date.now().toString() + i;
+                    const name = (row['Họ tên'] || row['Tên giáo viên'] || '').toString().toUpperCase();
+                    if (!name) return;
+                    newT.push({ id, name, roles: (row['Chức vụ'] || '').toString().split(',').map((s:any)=>s.trim()).filter((s:any)=>s) });
+                    newA[id] = `${row['Môn dạy'] || ''}: ${row['Lớp dạy'] || ''}`.toUpperCase().trim();
+                });
+                updateWeekData(currentWeek, { teachers: newT, assignments: newA });
+            };
+            reader.readAsBinaryString(file);
+        };
+
         const toggleRole = (e: React.MouseEvent, roleName: string) => {
             e.stopPropagation();
             setNewTeacherRoles(prev => 
-                prev.includes(roleName) 
-                ? prev.filter(r => r !== roleName) 
-                : [...prev, roleName]
+                prev.includes(roleName) ? prev.filter(r => r !== roleName) : [...prev, roleName]
             );
             // TỰ ĐỘNG THU VỀ SAU KHI CHỌN
             setShowRoleDropdown(false);
@@ -257,6 +283,9 @@ const App = () => {
                         <button onClick={() => { setCurrentWeek(currentWeek+1); setSelectedIds([]); }} className="p-4 hover:bg-slate-100 rounded-2xl transition-colors text-slate-400 hover:text-blue-600"><ChevronRight/></button>
                     </div>
                     <div className="flex flex-wrap gap-3">
+                        <button onClick={handleExportTemplate} className="bg-slate-50 text-slate-500 px-6 py-4 rounded-2xl flex items-center gap-2 font-bold hover:bg-slate-100 transition-all border border-slate-100"><FileDown size={20}/> Tải Mẫu CSV</button>
+                        <button onClick={() => fileRef.current?.click()} className="bg-emerald-50 text-emerald-700 px-6 py-4 rounded-2xl flex items-center gap-2 font-bold shadow-sm hover:bg-emerald-100 transition-all border border-emerald-100"><FileUp size={20}/> Nhập Excel</button>
+                        <input type="file" ref={fileRef} className="hidden" onChange={handleImportExcel} accept=".xlsx,.xls,.csv"/>
                         <button onClick={() => { setIsAdding(!isAdding); setNewTeacherRoles([]); setShowRoleDropdown(false); }} className="bg-blue-600 text-white px-8 py-4 rounded-2xl flex items-center gap-2 font-black shadow-xl hover:bg-blue-700 transition-all uppercase tracking-widest text-xs">{isAdding ? 'Đóng Form' : 'Thêm GV mới'}</button>
                     </div>
                 </div>
@@ -267,24 +296,24 @@ const App = () => {
                         <h3 className="text-lg font-black text-slate-800 uppercase tracking-tight mb-8">Thông tin giáo viên tuần {currentWeek}</h3>
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-10">
                             <div className="space-y-3">
-                                <label className="text-[10px] font-black uppercase text-slate-400 ml-2">Họ tên (Chấp nhận chữ thường)</label>
+                                <label className="text-[10px] font-black uppercase text-slate-400 ml-2">Họ tên GV (Hỗ trợ chữ thường)</label>
                                 <input type="text" placeholder="Nguyễn văn a" className="w-full p-5 rounded-2xl bg-slate-50 border-2 border-transparent focus:border-blue-200 focus:bg-white outline-none font-bold shadow-inner" id="new-name"/>
                             </div>
                             <div className="space-y-3">
-                                <label className="text-[10px] font-black uppercase text-slate-400 ml-2">Môn dạy</label>
+                                <label className="text-[10px] font-black uppercase text-slate-400 ml-2">Môn giảng dạy</label>
                                 <select className="w-full p-5 rounded-2xl bg-slate-50 border-2 border-transparent focus:border-blue-200 focus:bg-white outline-none font-bold shadow-inner" id="new-sub">
                                     <option value="">Chọn môn</option>
                                     {data.subjectConfigs.map((s: any) => <option key={s.name} value={s.name}>{s.name}</option>)}
                                 </select>
                             </div>
                             <div className="space-y-3">
-                                <label className="text-[10px] font-black uppercase text-slate-400 ml-2">Lớp (vd: 6a1, 7b2)</label>
-                                <input type="text" placeholder="6A1, 6A2" className="w-full p-5 rounded-2xl bg-slate-50 border-2 border-transparent focus:border-blue-200 focus:bg-white outline-none font-bold shadow-inner uppercase" id="new-cls"/>
+                                <label className="text-[10px] font-black uppercase text-slate-400 ml-2">Lớp học (Ví dụ: 6a1, 7b2)</label>
+                                <input type="text" placeholder="6A1, 7B..." className="w-full p-5 rounded-2xl bg-slate-50 border-2 border-transparent focus:border-blue-200 focus:bg-white outline-none font-bold shadow-inner uppercase" id="new-cls"/>
                             </div>
                             <div className="space-y-3 relative">
-                                <label className="text-[10px] font-black uppercase text-slate-400 ml-2">Kiêm nhiệm</label>
-                                <div onClick={() => setShowRoleDropdown(!showRoleDropdown)} className="w-full p-5 bg-slate-50 rounded-2xl border-2 border-transparent hover:border-blue-100 font-bold text-slate-600 text-sm flex justify-between items-center cursor-pointer shadow-inner">
-                                    <span className="truncate">{newTeacherRoles.length > 0 ? newTeacherRoles.join(', ') : 'Chưa chọn...'}</span>
+                                <label className="text-[10px] font-black uppercase text-slate-400 ml-2">Công việc kiêm nhiệm</label>
+                                <div onClick={() => setShowRoleDropdown(!showRoleDropdown)} className="w-full p-5 bg-slate-50 rounded-2xl border-2 border-transparent hover:border-blue-100 font-bold text-slate-600 text-sm flex justify-between items-center cursor-pointer shadow-inner transition-all">
+                                    <span className="truncate">{newTeacherRoles.length > 0 ? newTeacherRoles.join(', ') : 'Chọn chức vụ...'}</span>
                                     <ChevronDown size={20} className={`text-blue-500 transition-transform ${showRoleDropdown ? 'rotate-180' : ''}`} />
                                 </div>
                                 {showRoleDropdown && (
@@ -302,20 +331,22 @@ const App = () => {
                         <div className="flex justify-end pt-8 border-t border-slate-50 mt-10">
                             <button onClick={() => {
                                 const nameInput = (document.getElementById('new-name') as HTMLInputElement);
-                                const name = nameInput.value.trim();
+                                const name = nameInput.value.trim().toUpperCase();
                                 const sub = (document.getElementById('new-sub') as HTMLSelectElement).value;
-                                const clsStr = (document.getElementById('new-cls') as HTMLInputElement).value.trim();
-                                if (!name || !sub || !clsStr) return alert("Vui lòng nhập đủ tên, môn và lớp!");
+                                const clsInput = (document.getElementById('new-cls') as HTMLInputElement);
+                                const clsStr = clsInput.value.replace(/\s+/g, ' ').toUpperCase().trim();
+
+                                if (!name || !sub || !clsStr) return alert("Vui lòng nhập đầy đủ thông tin!");
                                 
-                                const classes = clsStr.split(',').map(c => c.trim().toUpperCase()).filter(c => c);
+                                const classes = clsStr.split(',').map(c => c.trim()).filter(c => c);
                                 for (let c of classes) {
-                                    if(!isValidClassName(c)) return alert(`Lớp "${c}" sai định dạng (vd: 6A1, 7B).`);
-                                    if(classToTeacherMap[c]) return alert(`Lớp ${c} đã được phân công cho ${classToTeacherMap[c]}!`);
+                                    if(!isValidClassName(c)) return alert(`Lớp "${c}" không đúng định dạng THCS (Phải bắt đầu bằng 6-9).`);
+                                    if(classToTeacherMap[c]) return alert(`Lớp ${c} đã được giao cho ${classToTeacherMap[c]}. Vui lòng kiểm tra lại!`);
                                 }
                                 
                                 const tId = Date.now().toString();
                                 updateWeekData(currentWeek, {
-                                    teachers: [{ id: tId, name: name.toUpperCase(), roles: [...newTeacherRoles] }, ...teachers],
+                                    teachers: [{ id: tId, name, roles: [...newTeacherRoles] }, ...teachers],
                                     assignments: { ...assignments, [tId]: `${sub}: ${classes.join(', ')}` }
                                 });
                                 setIsAdding(false); setNewTeacherRoles([]); setShowRoleDropdown(false);
@@ -324,15 +355,15 @@ const App = () => {
                     </div>
                 )}
 
-                {/* KHU VỰC SAO CHÉP TỪ TUẦN TRƯỚC NẾU DANH SÁCH TRỐNG */}
+                {/* KHU VỰC SAO CHÉP CHỌN LỌC */}
                 {teachers.length === 0 && prevWeekData.teachers.length > 0 && (
                     <div className="mb-10 bg-indigo-50 border-2 border-indigo-100 p-10 rounded-[3.5rem] animate-fadeIn shadow-inner">
                         <div className="flex flex-col md:flex-row justify-between items-center gap-6">
                             <div className="flex items-center gap-4 text-indigo-700">
                                 <Info size={32} />
                                 <div>
-                                    <h4 className="font-black text-xl tracking-tight">Gợi ý từ tuần {currentWeek - 1}</h4>
-                                    <p className="text-sm font-bold opacity-70">Tuần này chưa có phân công. Bạn có muốn sao chép nhanh các giáo viên tuần trước?</p>
+                                    <h4 className="font-black text-xl tracking-tight">Tùy chọn sao chép từ tuần {currentWeek - 1}</h4>
+                                    <p className="text-sm font-bold opacity-70">Chọn giáo viên có phân công không đổi để sao chép nhanh.</p>
                                 </div>
                             </div>
                             <button onClick={copySelectedFromPrevious} disabled={selectedIds.length === 0} className={`px-10 py-5 rounded-2xl font-black text-xs uppercase tracking-widest transition-all shadow-xl ${selectedIds.length > 0 ? 'bg-indigo-600 text-white hover:bg-indigo-700 scale-105' : 'bg-slate-200 text-slate-400 cursor-not-allowed'}`}>Sao chép {selectedIds.length > 0 ? selectedIds.length : ''} GV đã chọn</button>
@@ -366,7 +397,6 @@ const App = () => {
                                 const tkbCount = getTKBPeriods(assignment);
                                 const log = logs[t.id] || { bu: 0, tang: 0 };
                                 
-                                // Tạo bản đồ các lớp khác để kiểm tra trùng trong ô nhập liệu này
                                 const otherAssignments: Record<string, string> = {};
                                 Object.entries(assignments).forEach(([id, s]) => {
                                     if (id === t.id || !s) return;
@@ -397,14 +427,14 @@ const App = () => {
                                             <LocalNumericInput 
                                                 value={log.bu} 
                                                 onChange={(val: number) => updateWeekData(currentWeek, { logs: { ...logs, [t.id]: { ...log, bu: val } } })}
-                                                className="w-20 mx-auto block text-center p-4 bg-orange-50 border-2 border-orange-100 rounded-2xl font-black text-orange-700 outline-none hover:border-orange-300"
+                                                className="w-20 mx-auto block text-center p-4 bg-orange-50 border-2 border-orange-100 rounded-2xl font-black text-orange-700 outline-none hover:border-orange-300 transition-all"
                                             />
                                         </td>
                                         <td className="p-8">
                                             <LocalNumericInput 
                                                 value={log.tang} 
                                                 onChange={(val: number) => updateWeekData(currentWeek, { logs: { ...logs, [t.id]: { ...log, tang: val } } })}
-                                                className="w-20 mx-auto block text-center p-4 bg-orange-50 border-2 border-orange-100 rounded-2xl font-black text-orange-700 outline-none hover:border-orange-300"
+                                                className="w-20 mx-auto block text-center p-4 bg-orange-50 border-2 border-orange-100 rounded-2xl font-black text-orange-700 outline-none hover:border-orange-300 transition-all"
                                             />
                                         </td>
                                         <td className="p-8 text-right opacity-0 group-hover:opacity-100 transition-opacity">
@@ -415,7 +445,7 @@ const App = () => {
                             })}
                         </tbody>
                     </table>
-                    {teachers.length === 0 && prevWeekData.teachers.length === 0 && <div className="py-32 text-center text-slate-300 italic font-black uppercase tracking-widest">Danh sách tuần này đang trống</div>}
+                    {teachers.length === 0 && prevWeekData.teachers.length === 0 && <div className="py-32 text-center text-slate-300 italic font-black uppercase tracking-widest">Chưa có phân công tuần hiện tại</div>}
                 </div>
             </div>
         );
@@ -460,11 +490,11 @@ const App = () => {
                     <table className="w-full text-left">
                         <thead className="bg-slate-50 border-b text-[10px] font-black uppercase text-slate-400">
                             <tr>
-                                <th className="p-10 tracking-widest">Họ tên Giáo viên</th>
+                                <th className="p-10 tracking-widest">Giáo viên</th>
                                 <th className="p-10 text-center tracking-widest">Tiết TKB</th>
                                 <th className="p-10 text-center text-orange-600 tracking-widest">Dạy bù</th>
                                 <th className="p-10 text-center text-orange-600 tracking-widest">Tăng tiết/BD</th>
-                                <th className="p-10 text-center bg-blue-50/50 text-blue-700 tracking-widest">Lũy kế</th>
+                                <th className="p-10 text-center bg-blue-50/50 text-blue-700 tracking-widest font-bold">Lũy kế</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -517,7 +547,7 @@ const App = () => {
                         <thead className="bg-slate-50 border-b text-[10px] font-black uppercase text-slate-400">
                             <tr>
                                 <th className="p-8 tracking-widest">Giáo viên</th>
-                                <th className="p-8 text-center tracking-widest">Định mức</th>
+                                <th className="p-8 text-center tracking-widest text-slate-400">Định mức</th>
                                 <th className="p-8 text-center tracking-widest">Thực dạy</th>
                                 <th className="p-8 text-center bg-blue-50/50 text-blue-700 tracking-widest">Chênh lệch</th>
                             </tr>
@@ -571,7 +601,7 @@ const App = () => {
                         </div>
                     </div>
                     <div className="bg-slate-50 p-10 rounded-[4rem] border border-slate-100 shadow-inner max-h-[800px] overflow-y-auto no-scrollbar">
-                        <h3 className="font-black text-slate-700 uppercase text-xs mb-8 tracking-widest flex items-center gap-3"><Book size={18} className="text-blue-500"/> Định mức theo Khối</h3>
+                        <h3 className="font-black text-slate-700 uppercase text-xs mb-8 tracking-widest flex items-center gap-3"><Book size={18} className="text-blue-500"/> Định mức Môn học theo Khối</h3>
                         <div className="space-y-6">
                             {data.subjectConfigs.map((s: any, i: number) => (
                                 <div key={i} className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 group transition-all hover:shadow-md">
@@ -585,7 +615,7 @@ const App = () => {
                                                 <label className="block text-[9px] font-black text-slate-300 uppercase mb-1 tracking-widest">Khối {grade}</label>
                                                 <input type="number" step="0.5" value={s[`p${grade}`]} onChange={e => {
                                                     const nc = [...data.subjectConfigs]; nc[i][`p${grade}`] = parseFloat(e.target.value) || 0; updateData({subjectConfigs: nc});
-                                                }} className="w-full p-2 bg-slate-50 rounded-xl text-center font-black text-blue-500 border border-slate-100 outline-none focus:ring-2 focus:ring-blue-100"/>
+                                                }} className="w-full p-2 bg-slate-50 rounded-xl text-center font-black text-blue-500 border border-slate-100 outline-none focus:ring-2 focus:ring-blue-100 transition-all"/>
                                             </div>
                                         ))}
                                     </div>
@@ -605,11 +635,11 @@ const App = () => {
                     <div className="flex items-center gap-5">
                         <div className="bg-blue-600 p-4 rounded-[1.5rem] text-white shadow-2xl rotate-3 transition-transform hover:rotate-0"><LayoutDashboard size={32}/></div>
                         <div>
-                            <h1 className="font-black text-3xl tracking-tighter text-slate-800 uppercase italic">THCS PRO <span className="text-blue-600 text-sm align-top italic font-black">v7.5</span></h1>
-                            <p className="text-[9px] font-black uppercase text-slate-400 tracking-widest leading-none italic">Senior Dev - Smart Input</p>
+                            <h1 className="font-black text-3xl tracking-tighter text-slate-800 uppercase italic">THCS PRO <span className="text-blue-600 text-sm align-top italic font-black">v7.6</span></h1>
+                            <p className="text-[9px] font-black uppercase text-slate-400 tracking-widest leading-none italic">Senior Dev - Smart Data Management</p>
                         </div>
                     </div>
-                    <nav className="flex gap-2 bg-slate-100 p-2 rounded-[2.5rem] shadow-inner">
+                    <nav className="flex gap-2 bg-slate-100 p-2 rounded-[2.5rem] shadow-inner overflow-x-auto no-scrollbar max-w-full">
                         {[
                             {id: 'config', icon: Settings, label: 'Cài đặt'},
                             {id: 'teachers', icon: Users, label: 'Phân công'},
@@ -633,7 +663,7 @@ const App = () => {
             </main>
             <footer className="p-8 text-center">
                 <div className="text-[10px] font-black uppercase text-slate-300 tracking-[0.3em] flex items-center justify-center gap-3 italic">
-                    <CheckCircle2 size={12}/> Quản lý chuyên môn THCS (Bản quyền Senior Developer)
+                    <CheckCircle2 size={12}/> Hệ thống Quản lý Chuyên môn THCS (Senior Developer Edition)
                 </div>
             </footer>
         </div>
