@@ -10,7 +10,7 @@ import {
 } from 'lucide-react';
 
 // --- CẤU HÌNH HỆ THỐNG ---
-const STORAGE_KEY = 'thcs_teaching_mgmt_v8_7_pro';
+const STORAGE_KEY = 'thcs_teaching_mgmt_v8_8_pro';
 
 const DEFAULT_SUBJECT_CONFIGS = [
     { name: 'Toán', p6: 4, p7: 4, p8: 4, p9: 4 },
@@ -112,6 +112,7 @@ const App = () => {
             standardQuota: 19, 
             roles: DEFAULT_ROLES,
             subjectConfigs: DEFAULT_SUBJECT_CONFIGS,
+            gradeClassCounts: { p6: 1, p7: 1, p8: 1, p9: 1 }, // Số lớp học mặc định
             weeklyRecords: {} 
         };
     });
@@ -504,58 +505,46 @@ const App = () => {
             })).sort((a,b) => a.name.localeCompare(b.name));
         }, [data, repRange]);
 
-        // CẬP NHẬT TÍNH TOÁN TIẾN ĐỘ 35 TUẦN THEO MÔN HỌC (PRO v8.8)
+        // CẬP NHẬT TÍNH TOÁN TIẾN ĐỘ 35 TUẦN THEO CẤU HÌNH SỐ LỚP CỦA TRƯỜNG
         const subjStats = useMemo(() => {
-            const map: Record<string, { actualYTD: number; weeklyQuota: number }> = {};
             const numWeeksRange = (repRange.e - repRange.s + 1);
+            const classCounts = data.gradeClassCounts || { p6: 0, p7: 0, p8: 0, p9: 0 };
             
-            // 1. Xác định số lớp thực tế dựa trên phân công ở tuần kết thúc (end week)
-            const lastData = data.weeklyRecords[repRange.e] || { assignments: {} };
-            Object.values(lastData.assignments).forEach((str: any) => {
-                (str || "").split(';').forEach((p:any) => {
-                    const [sub, clsPart] = p.split(':');
-                    const subName = sub?.trim();
-                    if (subName && clsPart && data.subjectConfigs.some(s => s.name === subName)) {
-                        if (!map[subName]) map[subName] = { actualYTD: 0, weeklyQuota: 0 };
-                        clsPart.split(',').forEach((c:any) => {
-                            const g = c.trim().match(/^[6-9]/)?.[0];
-                            const conf = data.subjectConfigs.find(x => x.name === subName);
-                            if (g && conf) {
-                                map[subName].weeklyQuota += Number(conf[`p${g}`] || 0);
+            return data.subjectConfigs.map((s: any) => {
+                // Định mức tuần của toàn trường cho môn này = (Số tiết/khối * Số lớp/khối)
+                const weeklyQuota = 
+                    (classCounts.p6 * (s.p6 || 0)) + 
+                    (classCounts.p7 * (s.p7 || 0)) + 
+                    (classCounts.p8 * (s.p8 || 0)) + 
+                    (classCounts.p9 * (s.p9 || 0));
+
+                let actualYTD = 0;
+                // Tính tổng thực dạy của tất cả GV cho môn học này
+                for (let w = repRange.s; w <= repRange.e; w++) {
+                    const rec = data.weeklyRecords[w]; if (!rec) continue;
+                    Object.entries(rec.assignments).forEach(([tid, str]: any) => {
+                        (str || "").split(';').forEach((p:any) => {
+                            const [sub, clsPart] = p.split(':');
+                            if (sub?.trim() === s.name) {
+                                let teacherWeekTKB = 0;
+                                clsPart.split(',').forEach((c:any) => {
+                                    const g = c.trim().match(/^[6-9]/)?.[0];
+                                    if (g) teacherWeekTKB += Number(s[`p${g}`] || 0);
+                                });
+                                const log = rec.logs?.[tid] || { bu: 0, tang: 0 };
+                                actualYTD += teacherWeekTKB + (log.bu || 0) + (log.tang || 0);
                             }
                         });
-                    }
-                });
-            });
-
-            // 2. Tính tổng tiết thực dạy lũy kế của môn trong khoảng từ start đến end
-            for (let w = repRange.s; w <= repRange.e; w++) {
-                const rec = data.weeklyRecords[w]; if (!rec) continue;
-                Object.entries(rec.assignments).forEach(([tid, str]: any) => {
-                    (str || "").split(';').forEach((p:any) => {
-                        const [sub, clsPart] = p.split(':');
-                        const subName = sub?.trim();
-                        if (subName && map[subName]) {
-                            let weekTKB = 0;
-                            clsPart.split(',').forEach((c:any) => {
-                                const g = c.trim().match(/^[6-9]/)?.[0];
-                                const conf = data.subjectConfigs.find(x => x.name === subName);
-                                if (g && conf) weekTKB += Number(conf[`p${g}`] || 0);
-                            });
-                            const log = rec.logs?.[tid] || { bu: 0, tang: 0 };
-                            map[subName].actualYTD += weekTKB + (log.bu || 0) + (log.tang || 0);
-                        }
                     });
-                });
-            }
+                }
 
-            return Object.entries(map).map(([name, stats]) => {
-                const qTargetL = stats.weeklyQuota * numWeeksRange; // Định mức theo tiến độ N tuần
-                const qYear = stats.weeklyQuota * 35; // Định mức cả năm (35 tuần)
-                const pctProgress = qTargetL > 0 ? (stats.actualYTD / qTargetL) * 100 : 0;
-                const pctYear = qYear > 0 ? (stats.actualYTD / qYear) * 100 : 0;
-                return { name, qTargetL, qYear, actualYTD: stats.actualYTD, pctProgress, pctYear };
-            }).filter(x => x.qYear > 0).sort((a, b) => b.pctProgress - a.pctProgress);
+                const qTargetL = weeklyQuota * numWeeksRange;
+                const qYear = weeklyQuota * 35;
+                const pctProgress = qTargetL > 0 ? (actualYTD / qTargetL) * 100 : 0;
+                const pctYear = qYear > 0 ? (actualYTD / qYear) * 100 : 0;
+
+                return { name: s.name, qTargetL, qYear, actualYTD, pctProgress, pctYear, weeklyQuota };
+            }).filter(x => x.weeklyQuota > 0).sort((a, b) => b.pctProgress - a.pctProgress);
         }, [data, repRange]);
 
         const handleExportDetailedReport = () => {
@@ -570,7 +559,7 @@ const App = () => {
             // @ts-ignore
             XLSX.utils.book_append_sheet(wb, wsProgress, "Tien_Do_Mon_Hoc");
 
-            // Sheet 2: Chi tiết giáo viên (Giữ nguyên)
+            // Sheet 2: Chi tiết giáo viên
             const teacherHeaders = ["Họ tên Giáo viên", "Định mức tích lũy", "Thực dạy tích lũy", "Chênh lệch (Thừa/Thiếu)", "Ghi chú"];
             const tRows = teacherStats.map(s => [
                 s.name,
@@ -609,7 +598,7 @@ const App = () => {
                                 });
                             });
                             // @ts-ignore
-                            const wsMaster = XLSX.utils.aoa_to_sheet([["MASTER_DATA_THCS_PRO_v8.7"], masterH, ...masterR]);
+                            const wsMaster = XLSX.utils.aoa_to_sheet([["MASTER_DATA_THCS_PRO_v8.8"], masterH, ...masterR]);
                             const confH = [["CẤU HÌNH HỆ THỐNG"], ["Định mức chuẩn", data.standardQuota], [], ["Môn học", "Khối 6", "Khối 7", "Khối 8", "Khối 9"]];
                             const subjR = data.subjectConfigs.map((s:any) => [s.name, s.p6, s.p7, s.p8, s.p9]);
                             // @ts-ignore
@@ -621,7 +610,7 @@ const App = () => {
                             // @ts-ignore
                             XLSX.utils.book_append_sheet(wb, wsMaster, "DATA_MASTER_RECOVER");
                             // @ts-ignore
-                            XLSX.writeFile(wb, `Sao_Luu_HT_THCS_v8.7.xlsx`);
+                            XLSX.writeFile(wb, `Sao_Luu_HT_THCS_v8.8.xlsx`);
                         }} className="bg-emerald-600 text-white px-4 py-2.5 rounded-xl flex items-center gap-2 font-black hover:bg-emerald-700 transition-all text-[11px] uppercase tracking-widest shadow-lg"><TableProperties size={16}/> Sao lưu Hệ thống</button>
                         <button onClick={() => backupFileRef.current?.click()} className="bg-slate-50 text-slate-500 px-4 py-2.5 rounded-xl flex items-center gap-2 font-black hover:bg-slate-100 transition-all text-[11px] uppercase tracking-widest border border-slate-200"><Upload size={16}/> Khôi phục</button>
                         <input type="file" ref={backupFileRef} className="hidden" accept=".json,.xlsx,.xls" onChange={(e) => {
@@ -645,12 +634,12 @@ const App = () => {
                                         const w = parseInt(row["TUẦN"]);
                                         if (!newWeekly[w]) newWeekly[w] = { teachers: [], assignments: {}, logs: {} };
                                         const tId = Date.now().toString() + Math.random();
-                                        newWeekly[w].teachers.push({ id: tId, name: row["Tên GV"], roles: (row["Chức vụ"] || "").split(",").map((s:any)=>s.trim()).filter((s:any)=>s) });
+                                        newWeekly[w].teachers.push({ id: tId, name: row["Tên GV"], roles: (row["Chử vụ"] || "").split(",").map((s:any)=>s.trim()).filter((s:any)=>s) });
                                         newWeekly[w].assignments[tId] = row["Phân công"] || "";
                                         newWeekly[w].logs[tId] = { bu: row["Dạy bù"] || 0, tang: row["Tăng tiết"] || 0 };
                                     });
                                     if (confirm(`Khôi phục dữ liệu từ ${Object.keys(newWeekly).length} tuần?`)) {
-                                        setData({ standardQuota: stdQuota, roles: DEFAULT_ROLES, subjectConfigs: confRows.filter((r:any) => r.name), weeklyRecords: newWeekly });
+                                        setData({ ...data, standardQuota: stdQuota, roles: DEFAULT_ROLES, subjectConfigs: confRows.filter((r:any) => r.name), weeklyRecords: newWeekly });
                                         alert("Khôi phục thành công!");
                                     }
                                 } catch (err) { alert("Lỗi xử lý file."); }
@@ -715,7 +704,7 @@ const App = () => {
                                     {/* Thanh Tiến độ so với N tuần */}
                                     <div className="space-y-1">
                                         <div className="flex justify-between text-[9px] font-black uppercase text-slate-400">
-                                            <span>So với tiến độ ({repRange.e - repRange.s + 1} tuần)</span>
+                                            <span>So với định mức tiến độ ({repRange.e - repRange.s + 1} tuần)</span>
                                             <span className={s.pctProgress >= 100 ? 'text-emerald-600' : 'text-orange-600'}>{s.pctProgress.toFixed(1)}%</span>
                                         </div>
                                         <div className="h-2 bg-white rounded-full overflow-hidden border border-slate-200 shadow-inner">
@@ -726,7 +715,7 @@ const App = () => {
                                     {/* Thanh Tiến độ so với cả năm */}
                                     <div className="space-y-1">
                                         <div className="flex justify-between text-[9px] font-black uppercase text-slate-400">
-                                            <span>So với năm học (35 tuần)</span>
+                                            <span>So với định mức năm học (35 tuần)</span>
                                             <span className="text-blue-600">{s.pctYear.toFixed(1)}%</span>
                                         </div>
                                         <div className="h-2 bg-white rounded-full overflow-hidden border border-slate-200 shadow-inner">
@@ -735,7 +724,7 @@ const App = () => {
                                     </div>
                                 </div>
                             ))}
-                            {subjStats.length === 0 && <div className="text-center p-10 text-slate-300 font-black uppercase text-[10px] italic">Chưa có dữ liệu phân công môn học</div>}
+                            {subjStats.length === 0 && <div className="text-center p-10 text-slate-300 font-black uppercase text-[10px] italic">Chưa có dữ liệu cấu hình hoặc phân công</div>}
                         </div>
                     </div>
                 </div>
@@ -751,19 +740,44 @@ const App = () => {
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
                     <div className="space-y-8">
                         <div className="bg-slate-50 p-10 rounded-[2rem] border border-slate-100 shadow-inner">
-                            <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4 italic">Định mức chuẩn (19 tiết)</label>
+                            <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4 italic">Định mức chuẩn giáo viên (Tiết/Tuần)</label>
                             <input type="number" value={data.standardQuota} onChange={e => updateData({standardQuota: parseFloat(e.target.value) || 0})} className="text-8xl font-black text-blue-600 bg-transparent outline-none w-full tracking-tighter"/>
                         </div>
+                        
+                        {/* MỚI: CẤU HÌNH SỐ LỚP TỪNG KHỐI */}
+                        <div className="bg-white p-8 rounded-[2rem] border-4 border-blue-50 shadow-lg">
+                            <h3 className="font-black text-slate-700 uppercase text-xs mb-6 tracking-widest italic flex items-center gap-2">
+                                <TableProperties size={18} className="text-blue-600" /> Số lượng lớp học toàn trường
+                            </h3>
+                            <div className="grid grid-cols-4 gap-4">
+                                {['6', '7', '8', '9'].map(g => (
+                                    <div key={g} className="text-center">
+                                        <label className="text-[10px] font-black text-slate-400 uppercase mb-2 block tracking-tight">Khối {g}</label>
+                                        <input 
+                                            type="number" 
+                                            value={data.gradeClassCounts[`p${g}`]} 
+                                            onChange={e => {
+                                                const newCounts = { ...data.gradeClassCounts, [`p${g}`]: parseInt(e.target.value) || 0 };
+                                                updateData({ gradeClassCounts: newCounts });
+                                            }} 
+                                            className="w-full p-4 bg-slate-50 rounded-xl text-center font-black text-slate-800 text-xl border-none outline-none focus:ring-4 focus:ring-blue-100 transition-all shadow-inner"
+                                        />
+                                        <span className="text-[9px] font-bold text-slate-300 uppercase mt-2 block tracking-widest">Lớp</span>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+
                         <div className="bg-blue-600 p-8 rounded-[2rem] text-white shadow-2xl relative overflow-hidden group">
-                            <h3 className="font-black uppercase text-[10px] mb-6 tracking-widest leading-none">Thêm môn học mới</h3>
+                            <h3 className="font-black uppercase text-[10px] mb-6 tracking-widest leading-none">Thêm môn học mới vào hệ thống</h3>
                             <div className="flex gap-4">
-                                <input type="text" placeholder="Tên môn..." value={newS} onChange={e => setNewS(e.target.value)} className="flex-1 p-4 rounded-xl bg-white/10 border-none text-white font-black outline-none text-base placeholder-white/30"/>
-                                <button onClick={() => { if(!newS.trim()) return; updateData({ subjectConfigs: [...data.subjectConfigs, { name: newS.trim(), p6: 1, p7: 1, p8: 1, p9: 1 }] }); setNewS(''); }} className="bg-white text-blue-600 px-8 py-4 rounded-xl font-black uppercase text-[11px] hover:bg-blue-50 transition-all shadow-xl">Thêm</button>
+                                <input type="text" placeholder="Tên môn học..." value={newS} onChange={e => setNewS(e.target.value)} className="flex-1 p-4 rounded-xl bg-white/10 border-none text-white font-black outline-none text-base placeholder-white/30"/>
+                                <button onClick={() => { if(!newS.trim()) return; updateData({ subjectConfigs: [...data.subjectConfigs, { name: newS.trim(), p6: 1, p7: 1, p8: 1, p9: 1 }] }); setNewS(''); }} className="bg-white text-blue-600 px-8 py-4 rounded-xl font-black uppercase text-[11px] hover:bg-blue-50 transition-all shadow-xl">Thêm môn</button>
                             </div>
                         </div>
                     </div>
-                    <div className="bg-slate-50 p-8 rounded-[2rem] border border-slate-100 max-h-[550px] overflow-y-auto no-scrollbar shadow-inner">
-                        <h3 className="font-black text-slate-400 uppercase text-[10px] mb-6 tracking-widest italic">Số tiết môn theo khối</h3>
+                    <div className="bg-slate-50 p-8 rounded-[2rem] border border-slate-100 max-h-[700px] overflow-y-auto no-scrollbar shadow-inner">
+                        <h3 className="font-black text-slate-400 uppercase text-[10px] mb-6 tracking-widest italic">Cấu hình số tiết môn học từng khối</h3>
                         <div className="space-y-4">
                             {data.subjectConfigs.map((s: any, i: number) => (
                                 <div key={i} className="bg-white p-4 rounded-xl shadow-sm border border-slate-100 group transition-all hover:border-blue-100 hover:shadow-md">
