@@ -6,7 +6,7 @@ import {
     Trash2, ChevronLeft, ChevronRight, ChevronDown,
     Plus, Edit3, Check,
     AlertTriangle, Copy, RefreshCcw, FileDown, PlusCircle, Book, Info, CheckCircle2, X, Square, CheckSquare, Search, FileSpreadsheet,
-    Download, Upload, Database, Save, TableProperties, FileJson, FileType, Layers
+    Download, Upload, Database, Save, TableProperties, FileJson, FileType, Layers, TrendingUp, BookOpen
 } from 'lucide-react';
 
 // --- CẤU HÌNH HỆ THỐNG ---
@@ -437,7 +437,6 @@ const App = () => {
                         <ChevronRight className="text-slate-200" size={20} />
                         <div className="flex items-center gap-3 px-3">
                             <label className="text-[10px] font-black uppercase text-slate-400 italic tracking-widest">Đến tuần</label>
-                            {/* Fixed: changed endWeek to endRange which is defined in the parent component scope */}
                             <input type="number" min={startRange} value={endRange || 1} onChange={e => setEndRange(parseInt(e.target.value) || 1)} className="w-14 p-2 bg-slate-50 rounded-xl font-black text-center text-sm text-blue-600 border-none outline-none"/>
                         </div>
                     </div>
@@ -480,6 +479,8 @@ const App = () => {
         const backupFileRef = useRef<HTMLInputElement>(null);
         useEffect(() => { setRepRange({ s: startRange, e: endRange }); }, [startRange, endRange]);
 
+        const GRADES = ['Khối 6', 'Khối 7', 'Khối 8', 'Khối 9', 'Khác'];
+
         const teacherStats = useMemo(() => {
             const map: Record<string, any> = {};
             const numWeeks = (repRange.e - repRange.s + 1);
@@ -488,7 +489,7 @@ const App = () => {
                 const rec = data.weeklyRecords[w]; if (!rec) continue;
                 rec.teachers.forEach((t: any) => {
                     const k = t.name.trim().toUpperCase();
-                    if (!map[k]) map[k] = { name: t.name, quotaPerW: 0, actual: 0, extra: 0 };
+                    if (!map[k]) map[k] = { name: t.name, quotaPerW: 0, actual: 0, extra: 0, roles: t.roles };
                     map[k].quotaPerW = Math.max(0, data.standardQuota - getTeacherReduction(t.roles));
                     const log = rec.logs?.[t.id] || { bu: 0, tang: 0 };
                     map[k].actual += (log.actual !== undefined ? log.actual : getTKBPeriods(rec.assignments[t.id] || ""));
@@ -502,6 +503,53 @@ const App = () => {
                 bal: (s.actual + s.extra) - (s.quotaPerW * numWeeks)
             })).sort((a,b) => a.name.localeCompare(b.name));
         }, [data, repRange]);
+
+        const subjectGradeMatrix = useMemo(() => {
+            const matrix: Record<string, Record<string, number>> = {};
+            data.subjectConfigs.forEach(s => {
+                matrix[s.name] = {};
+                GRADES.forEach(g => matrix[s.name][g] = 0);
+            });
+
+            for (let w = repRange.s; w <= repRange.e; w++) {
+                const rec = data.weeklyRecords[w]; if (!rec) continue;
+                Object.entries(rec.assignments).forEach(([tid, str]: any) => {
+                    (str || "").split(';').forEach((p:any) => {
+                        const [sub, clsPart] = p.split(':');
+                        if (sub && clsPart && matrix[sub.trim()]) {
+                            const clsList = clsPart.split(',').map((c:any) => c.trim().toUpperCase()).filter((c:any) => c);
+                            clsList.forEach((c:any) => {
+                                const gMatch = c.match(/^[6-9]/);
+                                const gKey = gMatch ? `Khối ${gMatch[0]}` : 'Khác';
+                                const conf = data.subjectConfigs.find(x => x.name === sub.trim());
+                                if (conf) {
+                                    const gradeVal = gMatch ? Number(conf[`p${gMatch[0]}`] || 0) : 0;
+                                    matrix[sub.trim()][gKey] += gradeVal;
+                                }
+                            });
+                        }
+                    });
+                });
+            }
+            return Object.entries(matrix).map(([name, gradeData]) => ({
+                name, gradeData, rowTotal: Object.values(gradeData).reduce((a, b) => a + b, 0)
+            })).filter(x => x.rowTotal > 0).sort((a, b) => b.rowTotal - a.rowTotal);
+        }, [data, repRange]);
+
+        const colTotals = useMemo(() => {
+            const totals: Record<string, number> = {};
+            GRADES.forEach(g => totals[g] = 0);
+            subjectGradeMatrix.forEach(row => GRADES.forEach(g => totals[g] += row.gradeData[g]));
+            return { grades: totals, grandTotal: Object.values(totals).reduce((a, b) => a + b, 0) };
+        }, [subjectGradeMatrix]);
+
+        const kpis = useMemo(() => {
+            return teacherStats.reduce((acc, t) => ({
+                actual: acc.actual + t.total,
+                surplus: acc.surplus + (t.bal > 0 ? t.bal : 0),
+                deficit: acc.deficit + (t.bal < 0 ? Math.abs(t.bal) : 0)
+            }), { actual: 0, surplus: 0, deficit: 0 });
+        }, [teacherStats]);
 
         const subjStats = useMemo(() => {
             const map: Record<string, { total: number; grades: Record<string, number> }> = {};
@@ -540,9 +588,44 @@ const App = () => {
             }).filter(x => x.yrQ > 0);
         }, [data, repRange]);
 
+        const handleExportDetailedReport = () => {
+            // @ts-ignore
+            const wb = XLSX.utils.book_new();
+            
+            // Sheet 1: Ma trận môn học
+            const matrixHeaders = ["Môn học", ...GRADES, "Tổng cộng"];
+            const matrixRows = subjectGradeMatrix.map(row => [
+                row.name,
+                ...GRADES.map(g => row.gradeData[g]),
+                row.rowTotal
+            ]);
+            matrixRows.push(["TỔNG CỘNG", ...GRADES.map(g => colTotals.grades[g]), colTotals.grandTotal]);
+            // @ts-ignore
+            const wsMatrix = XLSX.utils.aoa_to_sheet([[`BÁO CÁO THỐNG KÊ MÔN HỌC - KHỐI LỚP (TUẦN ${repRange.s} - ${repRange.e})`], [], matrixHeaders, ...matrixRows]);
+            // @ts-ignore
+            XLSX.utils.book_append_sheet(wb, wsMatrix, "Thong_Ke_Mon_Hoc");
+
+            // Sheet 2: Chi tiết giáo viên
+            const teacherHeaders = ["Họ tên Giáo viên", "Định mức tích lũy", "Thực dạy tích lũy", "Chênh lệch (Thừa/Thiếu)", "Ghi chú"];
+            const tRows = teacherStats.map(s => [
+                s.name,
+                s.progQuota,
+                s.total,
+                s.bal,
+                s.bal > 0 ? "Thừa tiết" : s.bal < 0 ? "Thiếu tiết" : "Đủ định mức"
+            ]);
+            // @ts-ignore
+            const wsTeachers = XLSX.utils.aoa_to_sheet([[`CHI TIẾT ĐỊNH MỨC GIÁO VIÊN (TUẦN ${repRange.s} - ${repRange.e})`], [], teacherHeaders, ...tRows]);
+            // @ts-ignore
+            XLSX.utils.book_append_sheet(wb, wsTeachers, "Chi_Tiet_Giao_Vien");
+
+            // @ts-ignore
+            XLSX.writeFile(wb, `Bao_Cao_Giang_Day_Tuan_${repRange.s}_den_${repRange.e}.xlsx`);
+        };
+
         return (
-            <div className="p-8 animate-fadeIn">
-                <div className="flex flex-col lg:flex-row justify-between items-center mb-10 gap-4">
+            <div className="p-8 animate-fadeIn space-y-8">
+                <div className="flex flex-col lg:flex-row justify-between items-center gap-4">
                     <div className="flex items-center gap-3 bg-white p-2.5 rounded-2xl border border-slate-100 shadow-sm">
                         <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2 italic">Khoảng báo cáo:</span>
                         <input type="number" value={repRange.s} onChange={e => setRepRange({...repRange, s: parseInt(e.target.value)||1})} className="w-14 p-2 bg-slate-50 rounded-xl text-center font-black text-blue-600 border-none text-sm"/>
@@ -550,6 +633,7 @@ const App = () => {
                         <input type="number" value={repRange.e} onChange={e => setRepRange({...repRange, e: parseInt(e.target.value)||1})} className="w-14 p-2 bg-slate-50 rounded-xl text-center font-black text-blue-600 border-none text-sm"/>
                     </div>
                     <div className="flex flex-wrap gap-2 justify-center lg:justify-end">
+                        <button onClick={handleExportDetailedReport} className="bg-blue-600 text-white px-5 py-2.5 rounded-xl flex items-center gap-2 font-black hover:bg-blue-700 transition-all text-[11px] uppercase tracking-widest shadow-lg"><FileDown size={18}/> Xuất Báo cáo chi tiết</button>
                         <button onClick={() => {
                             const masterH = ["TUẦN", "Tên GV", "Chức vụ", "Phân công", "Dạy bù", "Tăng tiết"];
                             const masterR: any[] = [];
@@ -572,7 +656,7 @@ const App = () => {
                             XLSX.utils.book_append_sheet(wb, wsMaster, "DATA_MASTER_RECOVER");
                             // @ts-ignore
                             XLSX.writeFile(wb, `Sao_Luu_HT_THCS_v8.7.xlsx`);
-                        }} className="bg-emerald-600 text-white px-4 py-2.5 rounded-xl flex items-center gap-2 font-black hover:bg-emerald-700 transition-all text-[11px] uppercase tracking-widest shadow-lg"><TableProperties size={16}/> Sao lưu Excel</button>
+                        }} className="bg-emerald-600 text-white px-4 py-2.5 rounded-xl flex items-center gap-2 font-black hover:bg-emerald-700 transition-all text-[11px] uppercase tracking-widest shadow-lg"><TableProperties size={16}/> Sao lưu Hệ thống</button>
                         <button onClick={() => backupFileRef.current?.click()} className="bg-slate-50 text-slate-500 px-4 py-2.5 rounded-xl flex items-center gap-2 font-black hover:bg-slate-100 transition-all text-[11px] uppercase tracking-widest border border-slate-200"><Upload size={16}/> Khôi phục</button>
                         <input type="file" ref={backupFileRef} className="hidden" accept=".json,.xlsx,.xls" onChange={(e) => {
                             const file = e.target.files?.[0]; if (!file) return;
@@ -609,6 +693,68 @@ const App = () => {
                         }}/>
                     </div>
                 </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                    <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm border-l-8 border-l-blue-600">
+                        <div className="p-3 bg-blue-50 text-blue-600 rounded-2xl w-fit mb-4"><TrendingUp className="w-6 h-6" /></div>
+                        <div className="text-3xl font-black text-slate-800 tracking-tighter">{kpis.actual.toFixed(1)}</div>
+                        <div className="text-[10px] text-slate-400 font-black uppercase mt-1 tracking-widest">Tiết thực dạy</div>
+                    </div>
+                    <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm border-l-8 border-l-emerald-500">
+                        <div className="p-3 bg-emerald-50 text-emerald-500 rounded-2xl w-fit mb-4"><CheckCircle2 className="w-6 h-6" /></div>
+                        <div className="text-3xl font-black text-emerald-600 tracking-tighter">+{kpis.surplus.toFixed(1)}</div>
+                        <div className="text-[10px] text-slate-400 font-black uppercase mt-1 tracking-widest">Dôi dư (Thừa)</div>
+                    </div>
+                    <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm border-l-8 border-l-red-500">
+                        <div className="p-3 bg-red-50 text-red-600 rounded-2xl w-fit mb-4"><AlertTriangle className="w-6 h-6" /></div>
+                        <div className="text-3xl font-black text-red-600 tracking-tighter">-{kpis.deficit.toFixed(1)}</div>
+                        <div className="text-[10px] text-slate-400 font-black uppercase mt-1 tracking-widest">Thiếu hụt</div>
+                    </div>
+                    <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm border-l-8 border-l-indigo-600">
+                        <div className="p-3 bg-indigo-50 text-indigo-600 rounded-2xl w-fit mb-4"><Users className="w-6 h-6" /></div>
+                        <div className="text-3xl font-black text-slate-800 tracking-tighter">{teacherStats.length}</div>
+                        <div className="text-[10px] text-slate-400 font-black uppercase mt-1 tracking-widest">Giáo viên</div>
+                    </div>
+                </div>
+
+                <div className="bg-white rounded-[1.5rem] border border-slate-100 shadow-xl overflow-hidden">
+                    <div className="p-6 border-b flex items-center gap-3 bg-slate-50/50">
+                        <BookOpen className="w-6 h-6 text-blue-600" />
+                        <h3 className="font-black text-slate-700 uppercase text-xs tracking-widest italic">Ma trận Thống kê Môn học x Khối lớp</h3>
+                    </div>
+                    <div className="overflow-x-auto">
+                        <table className="w-full text-left">
+                            <thead className="bg-slate-50 border-b text-[10px] font-black uppercase text-slate-400 tracking-widest">
+                                <tr>
+                                    <th className="p-5 border-r border-slate-100">Môn học</th>
+                                    {GRADES.map(g => <th key={g} className="p-5 text-center">{g}</th>)}
+                                    <th className="p-5 text-center bg-blue-600 text-white">Tổng cộng</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100">
+                                {subjectGradeMatrix.map((row, i) => (
+                                    <tr key={i} className="hover:bg-blue-50/30 transition-colors">
+                                        <td className="p-4 font-black text-slate-700 border-r border-slate-100">{row.name}</td>
+                                        {GRADES.map(g => (
+                                            <td key={g} className="p-4 text-center text-slate-600 font-black">
+                                                {row.gradeData[g] > 0 ? row.gradeData[g].toFixed(1) : '-'}
+                                            </td>
+                                        ))}
+                                        <td className="p-4 text-center font-black text-blue-800 bg-blue-50/50">{row.rowTotal.toFixed(1)}</td>
+                                    </tr>
+                                ))}
+                                <tr className="bg-slate-800 text-white font-black uppercase text-[11px]">
+                                    <td className="p-6 tracking-widest border-r border-white/10">Tổng toàn trường</td>
+                                    {GRADES.map(g => <td key={g} className="p-6 text-center text-blue-300">{colTotals.grades[g].toFixed(1)}</td>)}
+                                    <td className="p-6 text-center bg-blue-600 text-2xl font-black tracking-tighter">
+                                        {colTotals.grandTotal.toFixed(1)}
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
                 <div className="grid grid-cols-1 xl:grid-cols-3 gap-8">
                     <div className="xl:col-span-2 space-y-8">
                         <div className="bg-white rounded-[1.5rem] border border-slate-100 shadow-xl overflow-hidden overflow-x-auto">
@@ -617,7 +763,7 @@ const App = () => {
                                     <tr>
                                         <th className="p-5 w-10 text-center">STT</th>
                                         <th className="p-5">Họ tên Giáo viên</th>
-                                        <th className="p-5 text-center">Định mức</th>
+                                        <th className="p-5 text-center">Định mức TL</th>
                                         <th className="p-5 text-center">Tích lũy</th>
                                         <th className="p-5 text-center text-blue-600">Thừa/Thiếu</th>
                                     </tr>
@@ -639,7 +785,7 @@ const App = () => {
                         </div>
                     </div>
                     <div className="bg-white rounded-[1.5rem] border border-slate-100 shadow-xl p-6 space-y-6">
-                        <h3 className="font-black text-slate-400 uppercase text-[10px] tracking-widest border-b pb-4 italic">Tiến độ 35 Tuần</h3>
+                        <h3 className="font-black text-slate-400 uppercase text-[10px] tracking-widest border-b pb-4 italic">Tiến độ 35 Tuần (Năm học)</h3>
                         <div className="space-y-4">
                             {subjStats.map((s: any, i: number) => (
                                 <div key={i} className="space-y-1.5">
