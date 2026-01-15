@@ -504,68 +504,19 @@ const App = () => {
             })).sort((a,b) => a.name.localeCompare(b.name));
         }, [data, repRange]);
 
-        const subjectGradeMatrix = useMemo(() => {
-            const matrix: Record<string, Record<string, number>> = {};
-            data.subjectConfigs.forEach(s => {
-                matrix[s.name] = {};
-                GRADES.forEach(g => matrix[s.name][g] = 0);
-            });
-
-            for (let w = repRange.s; w <= repRange.e; w++) {
-                const rec = data.weeklyRecords[w]; if (!rec) continue;
-                Object.entries(rec.assignments).forEach(([tid, str]: any) => {
-                    (str || "").split(';').forEach((p:any) => {
-                        const [sub, clsPart] = p.split(':');
-                        if (sub && clsPart && matrix[sub.trim()]) {
-                            const clsList = clsPart.split(',').map((c:any) => c.trim().toUpperCase()).filter((c:any) => c);
-                            clsList.forEach((c:any) => {
-                                const gMatch = c.match(/^[6-9]/);
-                                const gKey = gMatch ? `Khối ${gMatch[0]}` : 'Khác';
-                                const conf = data.subjectConfigs.find(x => x.name === sub.trim());
-                                if (conf) {
-                                    const gradeVal = gMatch ? Number(conf[`p${gMatch[0]}`] || 0) : 0;
-                                    matrix[sub.trim()][gKey] += gradeVal;
-                                }
-                            });
-                        }
-                    });
-                });
-            }
-            return Object.entries(matrix).map(([name, gradeData]) => ({
-                name, gradeData, rowTotal: Object.values(gradeData).reduce((a, b) => a + b, 0)
-            })).filter(x => x.rowTotal > 0).sort((a, b) => b.rowTotal - a.rowTotal);
-        }, [data, repRange]);
-
-        const colTotals = useMemo(() => {
-            const totals: Record<string, number> = {};
-            GRADES.forEach(g => totals[g] = 0);
-            subjectGradeMatrix.forEach(row => GRADES.forEach(g => totals[g] += row.gradeData[g]));
-            return { grades: totals, grandTotal: Object.values(totals).reduce((a, b) => a + b, 0) };
-        }, [subjectGradeMatrix]);
-
-        const kpis = useMemo(() => {
-            return teacherStats.reduce((acc, t) => ({
-                actual: acc.actual + t.total,
-                surplus: acc.surplus + (t.bal > 0 ? t.bal : 0),
-                deficit: acc.deficit + (t.bal < 0 ? Math.abs(t.bal) : 0)
-            }), { actual: 0, surplus: 0, deficit: 0 });
-        }, [teacherStats]);
-
-        // CẬP NHẬT TÍNH TOÁN TIẾN ĐỘ 35 TUẦN THEO MÔN
+        // CẬP NHẬT TÍNH TOÁN TIẾN ĐỘ 35 TUẦN THEO MÔN HỌC (PRO v8.8)
         const subjStats = useMemo(() => {
             const map: Record<string, { actualYTD: number; weeklyQuota: number }> = {};
+            const numWeeksRange = (repRange.e - repRange.s + 1);
             
-            // Lấy snapshot phân công tại tuần cuối của khoảng báo cáo để làm mốc tính định mức
+            // 1. Xác định số lớp thực tế dựa trên phân công ở tuần kết thúc (end week)
             const lastData = data.weeklyRecords[repRange.e] || { assignments: {} };
-            
-            // 1. Tính số tiết TKB của môn dựa trên phân công thực tế của tuần mốc
             Object.values(lastData.assignments).forEach((str: any) => {
                 (str || "").split(';').forEach((p:any) => {
                     const [sub, clsPart] = p.split(':');
                     const subName = sub?.trim();
                     if (subName && clsPart && data.subjectConfigs.some(s => s.name === subName)) {
                         if (!map[subName]) map[subName] = { actualYTD: 0, weeklyQuota: 0 };
-                        
                         clsPart.split(',').forEach((c:any) => {
                             const g = c.trim().match(/^[6-9]/)?.[0];
                             const conf = data.subjectConfigs.find(x => x.name === subName);
@@ -577,7 +528,7 @@ const App = () => {
                 });
             });
 
-            // 2. Tính tổng tiết thực dạy lũy kế của môn từ tuần 1 đến tuần hiện tại (start đến end)
+            // 2. Tính tổng tiết thực dạy lũy kế của môn trong khoảng từ start đến end
             for (let w = repRange.s; w <= repRange.e; w++) {
                 const rec = data.weeklyRecords[w]; if (!rec) continue;
                 Object.entries(rec.assignments).forEach(([tid, str]: any) => {
@@ -585,15 +536,12 @@ const App = () => {
                         const [sub, clsPart] = p.split(':');
                         const subName = sub?.trim();
                         if (subName && map[subName]) {
-                            // Tiết TKB tuần đó
                             let weekTKB = 0;
                             clsPart.split(',').forEach((c:any) => {
                                 const g = c.trim().match(/^[6-9]/)?.[0];
                                 const conf = data.subjectConfigs.find(x => x.name === subName);
                                 if (g && conf) weekTKB += Number(conf[`p${g}`] || 0);
                             });
-                            
-                            // Cộng dồn Bù + Tăng của giáo viên đó cho môn này (xấp xỉ theo phân công)
                             const log = rec.logs?.[tid] || { bu: 0, tang: 0 };
                             map[subName].actualYTD += weekTKB + (log.bu || 0) + (log.tang || 0);
                         }
@@ -602,38 +550,27 @@ const App = () => {
             }
 
             return Object.entries(map).map(([name, stats]) => {
-                const yrQ = stats.weeklyQuota * 35; // Tổng định mức cả năm
-                const pct = yrQ > 0 ? (stats.actualYTD / yrQ) * 100 : 0;
-                return { name, yrQ, actualYTD: stats.actualYTD, pct };
-            }).filter(x => x.yrQ > 0).sort((a, b) => b.pct - a.pct);
+                const qTargetL = stats.weeklyQuota * numWeeksRange; // Định mức theo tiến độ N tuần
+                const qYear = stats.weeklyQuota * 35; // Định mức cả năm (35 tuần)
+                const pctProgress = qTargetL > 0 ? (stats.actualYTD / qTargetL) * 100 : 0;
+                const pctYear = qYear > 0 ? (stats.actualYTD / qYear) * 100 : 0;
+                return { name, qTargetL, qYear, actualYTD: stats.actualYTD, pctProgress, pctYear };
+            }).filter(x => x.qYear > 0).sort((a, b) => b.pctProgress - a.pctProgress);
         }, [data, repRange]);
 
         const handleExportDetailedReport = () => {
             // @ts-ignore
             const wb = XLSX.utils.book_new();
             
-            // Sheet 1: Ma trận môn học
-            const matrixHeaders = ["Môn học", ...GRADES, "Tổng cộng"];
-            const matrixRows = subjectGradeMatrix.map(row => [
-                row.name,
-                ...GRADES.map(g => row.gradeData[g]),
-                row.rowTotal
-            ]);
-            matrixRows.push(["TỔNG CỘNG", ...GRADES.map(g => colTotals.grades[g]), colTotals.grandTotal]);
+            // Sheet 1: Tiến độ chương trình môn học
+            const progressHeaders = ["Môn học", "Thực dạy lũy kế", `Định mức tiến độ (${repRange.e - repRange.s + 1} tuần)`, "Định mức cả năm (35 tuần)", "% so với tiến độ", "% so với cả năm"];
+            const progressRows = subjStats.map(s => [s.name, s.actualYTD, s.qTargetL, s.qYear, s.pctProgress.toFixed(1) + "%", s.pctYear.toFixed(1) + "%"]);
             // @ts-ignore
-            const wsMatrix = XLSX.utils.aoa_to_sheet([[`BÁO CÁO THỐNG KÊ MÔN HỌC - KHỐI LỚP (TUẦN ${repRange.s} - ${repRange.e})`], [], matrixHeaders, ...matrixRows]);
-            // @ts-ignore
-            XLSX.utils.book_append_sheet(wb, wsMatrix, "Thong_Ke_Mon_Hoc");
-
-            // Sheet 2: Tiến độ 35 tuần
-            const progressHeaders = ["Môn học", "Thực dạy lũy kế", "Định mức cả năm (35 tuần)", "Tỉ lệ hoàn thành (%)"];
-            const progressRows = subjStats.map(s => [s.name, s.actualYTD, s.yrQ, s.pct.toFixed(2) + "%"]);
-            // @ts-ignore
-            const wsProgress = XLSX.utils.aoa_to_sheet([[`BÁO CÁO TIẾN ĐỘ GIẢNG DẠY THEO MÔN (35 TUẦN)`], [], progressHeaders, ...progressRows]);
+            const wsProgress = XLSX.utils.aoa_to_sheet([[`BÁO CÁO TIẾN ĐỘ GIẢNG DẠY (TUẦN ${repRange.s} - ${repRange.e})`], [], progressHeaders, ...progressRows]);
             // @ts-ignore
             XLSX.utils.book_append_sheet(wb, wsProgress, "Tien_Do_Mon_Hoc");
 
-            // Sheet 3: Chi tiết giáo viên
+            // Sheet 2: Chi tiết giáo viên (Giữ nguyên)
             const teacherHeaders = ["Họ tên Giáo viên", "Định mức tích lũy", "Thực dạy tích lũy", "Chênh lệch (Thừa/Thiếu)", "Ghi chú"];
             const tRows = teacherStats.map(s => [
                 s.name,
@@ -648,11 +585,12 @@ const App = () => {
             XLSX.utils.book_append_sheet(wb, wsTeachers, "Chi_Tiet_Giao_Vien");
 
             // @ts-ignore
-            XLSX.writeFile(wb, `Bao_Cao_Giang_Day_Chi_Tiet_v8.8.xlsx`);
+            XLSX.writeFile(wb, `Bao_Cao_Tien_Do_v8.8.xlsx`);
         };
 
         return (
             <div className="p-8 animate-fadeIn space-y-8">
+                {/* THANH ĐIỀU KHIỂN BÁO CÁO */}
                 <div className="flex flex-col lg:flex-row justify-between items-center gap-4">
                     <div className="flex items-center gap-3 bg-white p-2.5 rounded-2xl border border-slate-100 shadow-sm">
                         <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2 italic">Khoảng báo cáo:</span>
@@ -661,7 +599,7 @@ const App = () => {
                         <input type="number" value={repRange.e} onChange={e => setRepRange({...repRange, e: parseInt(e.target.value)||1})} className="w-14 p-2 bg-slate-50 rounded-xl text-center font-black text-blue-600 border-none text-sm"/>
                     </div>
                     <div className="flex flex-wrap gap-2 justify-center lg:justify-end">
-                        <button onClick={handleExportDetailedReport} className="bg-blue-600 text-white px-5 py-2.5 rounded-xl flex items-center gap-2 font-black hover:bg-blue-700 transition-all text-[11px] uppercase tracking-widest shadow-lg"><FileDown size={18}/> Xuất Báo cáo chi tiết</button>
+                        <button onClick={handleExportDetailedReport} className="bg-blue-600 text-white px-5 py-2.5 rounded-xl flex items-center gap-2 font-black hover:bg-blue-700 transition-all text-[11px] uppercase tracking-widest shadow-lg"><FileDown size={18}/> Xuất Báo cáo tiến độ</button>
                         <button onClick={() => {
                             const masterH = ["TUẦN", "Tên GV", "Chức vụ", "Phân công", "Dạy bù", "Tăng tiết"];
                             const masterR: any[] = [];
@@ -722,70 +660,14 @@ const App = () => {
                     </div>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                    <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm border-l-8 border-l-blue-600">
-                        <div className="p-3 bg-blue-50 text-blue-600 rounded-2xl w-fit mb-4"><TrendingUp className="w-6 h-6" /></div>
-                        <div className="text-3xl font-black text-slate-800 tracking-tighter">{kpis.actual.toFixed(1)}</div>
-                        <div className="text-[10px] text-slate-400 font-black uppercase mt-1 tracking-widest">Tiết thực dạy</div>
-                    </div>
-                    <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm border-l-8 border-l-emerald-500">
-                        <div className="p-3 bg-emerald-50 text-emerald-500 rounded-2xl w-fit mb-4"><CheckCircle2 className="w-6 h-6" /></div>
-                        <div className="text-3xl font-black text-emerald-600 tracking-tighter">+{kpis.surplus.toFixed(1)}</div>
-                        <div className="text-[10px] text-slate-400 font-black uppercase mt-1 tracking-widest">Dôi dư (Thừa)</div>
-                    </div>
-                    <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm border-l-8 border-l-red-500">
-                        <div className="p-3 bg-red-50 text-red-600 rounded-2xl w-fit mb-4"><AlertTriangle className="w-6 h-6" /></div>
-                        <div className="text-3xl font-black text-red-600 tracking-tighter">-{kpis.deficit.toFixed(1)}</div>
-                        <div className="text-[10px] text-slate-400 font-black uppercase mt-1 tracking-widest">Thiếu hụt</div>
-                    </div>
-                    <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm border-l-8 border-l-indigo-600">
-                        <div className="p-3 bg-indigo-50 text-indigo-600 rounded-2xl w-fit mb-4"><Users className="w-6 h-6" /></div>
-                        <div className="text-3xl font-black text-slate-800 tracking-tighter">{teacherStats.length}</div>
-                        <div className="text-[10px] text-slate-400 font-black uppercase mt-1 tracking-widest">Giáo viên</div>
-                    </div>
-                </div>
-
-                <div className="bg-white rounded-[1.5rem] border border-slate-100 shadow-xl overflow-hidden">
-                    <div className="p-6 border-b flex items-center gap-3 bg-slate-50/50">
-                        <BookOpen className="w-6 h-6 text-blue-600" />
-                        <h3 className="font-black text-slate-700 uppercase text-xs tracking-widest italic">Ma trận Thống kê Môn học x Khối lớp</h3>
-                    </div>
-                    <div className="overflow-x-auto">
-                        <table className="w-full text-left">
-                            <thead className="bg-slate-50 border-b text-[10px] font-black uppercase text-slate-400 tracking-widest">
-                                <tr>
-                                    <th className="p-5 border-r border-slate-100">Môn học</th>
-                                    {GRADES.map(g => <th key={g} className="p-5 text-center">{g}</th>)}
-                                    <th className="p-5 text-center bg-blue-600 text-white">Tổng cộng</th>
-                                </tr>
-                            </thead>
-                            <tbody className="divide-y divide-slate-100">
-                                {subjectGradeMatrix.map((row, i) => (
-                                    <tr key={i} className="hover:bg-blue-50/30 transition-colors">
-                                        <td className="p-4 font-black text-slate-700 border-r border-slate-100">{row.name}</td>
-                                        {GRADES.map(g => (
-                                            <td key={g} className="p-4 text-center text-slate-600 font-black">
-                                                {row.gradeData[g] > 0 ? row.gradeData[g].toFixed(1) : '-'}
-                                            </td>
-                                        ))}
-                                        <td className="p-4 text-center font-black text-blue-800 bg-blue-50/50">{row.rowTotal.toFixed(1)}</td>
-                                    </tr>
-                                ))}
-                                <tr className="bg-slate-800 text-white font-black uppercase text-[11px]">
-                                    <td className="p-6 tracking-widest border-r border-white/10">Tổng toàn trường</td>
-                                    {GRADES.map(g => <td key={g} className="p-6 text-center text-blue-300">{colTotals.grades[g].toFixed(1)}</td>)}
-                                    <td className="p-6 text-center bg-blue-600 text-2xl font-black tracking-tighter">
-                                        {colTotals.grandTotal.toFixed(1)}
-                                    </td>
-                                </tr>
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-
                 <div className="grid grid-cols-1 xl:grid-cols-3 gap-8">
+                    {/* BÁO CÁO GIÁO VIÊN (CHIẾM 2 CỘT) */}
                     <div className="xl:col-span-2 space-y-8">
                         <div className="bg-white rounded-[1.5rem] border border-slate-100 shadow-xl overflow-hidden overflow-x-auto">
+                            <div className="p-5 border-b bg-slate-50/50 flex items-center gap-2">
+                                <Users size={18} className="text-blue-600" />
+                                <h3 className="font-black text-slate-700 uppercase text-xs tracking-widest italic">Thống kê định mức từng Giáo viên</h3>
+                            </div>
                             <table className="w-full text-left min-w-[800px]">
                                 <thead className="bg-slate-50 border-b text-[10px] font-black uppercase text-slate-400 tracking-widest">
                                     <tr>
@@ -812,22 +694,44 @@ const App = () => {
                             </table>
                         </div>
                     </div>
-                    {/* KHU VỰC TIẾN ĐỘ 35 TUẦN THEO MÔN */}
-                    <div className="bg-white rounded-[1.5rem] border border-slate-100 shadow-xl p-6 space-y-6 overflow-hidden">
-                        <h3 className="font-black text-slate-400 uppercase text-[10px] tracking-widest border-b pb-4 italic">Tiến độ thực hiện chương trình (35 Tuần)</h3>
-                        <div className="space-y-5 max-h-[800px] overflow-y-auto pr-2 no-scrollbar">
+
+                    {/* BÁO CÁO TIẾN ĐỘ MÔN HỌC (CHIẾM 1 CỘT) */}
+                    <div className="bg-white rounded-[1.5rem] border border-slate-100 shadow-xl p-6 space-y-6 overflow-hidden h-fit">
+                        <div className="flex items-center gap-2 border-b pb-4">
+                            <BookOpen size={20} className="text-blue-600" />
+                            <h3 className="font-black text-slate-700 uppercase text-[10px] tracking-widest italic">Tiến độ thực hiện chương trình</h3>
+                        </div>
+                        <div className="space-y-6 max-h-[800px] overflow-y-auto pr-2 no-scrollbar">
                             {subjStats.map((s: any, i: number) => (
-                                <div key={i} className="space-y-1.5 p-3 rounded-2xl bg-slate-50 border border-slate-100 shadow-sm">
-                                    <div className="flex justify-between items-end">
+                                <div key={i} className="space-y-3 p-4 rounded-2xl bg-slate-50 border border-slate-100 shadow-sm">
+                                    <div className="flex justify-between items-start">
                                         <div className="font-black text-slate-700 text-sm italic">{s.name}</div>
-                                        <div className="text-[10px] font-black text-blue-600">{s.actualYTD.toFixed(1)} / {s.yrQ.toFixed(0)} tiết</div>
+                                        <div className="text-right">
+                                            <div className="text-[10px] font-black text-blue-600">{s.actualYTD.toFixed(1)} / {s.qYear.toFixed(0)} tiết</div>
+                                            <div className="text-[8px] font-black text-slate-400 uppercase">Lũy kế / Cả năm</div>
+                                        </div>
                                     </div>
-                                    <div className="h-3 bg-white rounded-full overflow-hidden border border-slate-200 shadow-inner">
-                                        <div className={`h-full transition-all duration-1000 ease-out ${s.pct >= 100 ? 'bg-emerald-500' : s.pct >= 50 ? 'bg-blue-500' : 'bg-orange-500'}`} style={{ width: `${Math.min(100, s.pct)}%` }}></div>
+                                    
+                                    {/* Thanh Tiến độ so với N tuần */}
+                                    <div className="space-y-1">
+                                        <div className="flex justify-between text-[9px] font-black uppercase text-slate-400">
+                                            <span>So với tiến độ ({repRange.e - repRange.s + 1} tuần)</span>
+                                            <span className={s.pctProgress >= 100 ? 'text-emerald-600' : 'text-orange-600'}>{s.pctProgress.toFixed(1)}%</span>
+                                        </div>
+                                        <div className="h-2 bg-white rounded-full overflow-hidden border border-slate-200 shadow-inner">
+                                            <div className={`h-full transition-all duration-1000 ${s.pctProgress >= 100 ? 'bg-emerald-500' : 'bg-orange-500'}`} style={{ width: `${Math.min(100, s.pctProgress)}%` }}></div>
+                                        </div>
                                     </div>
-                                    <div className="flex justify-between items-center mt-1">
-                                        <span className="text-[9px] font-black text-slate-300 uppercase tracking-tighter">Tiến độ năm học</span>
-                                        <div className="text-[10px] font-black text-slate-700 bg-white px-2 py-0.5 rounded border border-slate-100">{s.pct.toFixed(1)}%</div>
+
+                                    {/* Thanh Tiến độ so với cả năm */}
+                                    <div className="space-y-1">
+                                        <div className="flex justify-between text-[9px] font-black uppercase text-slate-400">
+                                            <span>So với năm học (35 tuần)</span>
+                                            <span className="text-blue-600">{s.pctYear.toFixed(1)}%</span>
+                                        </div>
+                                        <div className="h-2 bg-white rounded-full overflow-hidden border border-slate-200 shadow-inner">
+                                            <div className="h-full bg-blue-500 transition-all duration-1000" style={{ width: `${Math.min(100, s.pctYear)}%` }}></div>
+                                        </div>
                                     </div>
                                 </div>
                             ))}
