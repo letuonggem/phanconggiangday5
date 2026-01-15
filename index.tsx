@@ -10,7 +10,7 @@ import {
 } from 'lucide-react';
 
 // --- CẤU HÌNH HỆ THỐNG ---
-const STORAGE_KEY = 'thcs_teaching_mgmt_v8_6_pro';
+const STORAGE_KEY = 'thcs_teaching_mgmt_v8_7_pro';
 
 const DEFAULT_SUBJECT_CONFIGS = [
     { name: 'Toán', p6: 4, p7: 4, p8: 4, p9: 4 },
@@ -213,13 +213,22 @@ const App = () => {
                 const wData = data.weeklyRecords[w];
                 if (wData && wData.teachers && wData.teachers.length > 0) {
                     hasData = true;
-                    const headers = ["Họ tên Giáo viên", "Phân công (Môn: Lớp)", "Số tiết TKB", "Chức vụ"];
-                    const rows = wData.teachers.map((t: any) => [
-                        t.name,
-                        wData.assignments[t.id] || "",
-                        getTKBPeriods(wData.assignments[t.id] || ""),
-                        (t.roles || []).join(', ')
-                    ]);
+                    // Cập nhật Header đầy đủ theo yêu cầu v8.7
+                    const headers = ["Họ tên Giáo viên", "Phân công (Môn: Lớp)", "Số tiết TKB", "Dạy bù", "Tăng tiết", "Tổng cộng", "Chức vụ"];
+                    const rows = wData.teachers.map((t: any) => {
+                        const tkb = getTKBPeriods(wData.assignments[t.id] || "");
+                        const log = wData.logs?.[t.id] || { bu: 0, tang: 0 };
+                        const total = tkb + (log.bu || 0) + (log.tang || 0);
+                        return [
+                            t.name,
+                            wData.assignments[t.id] || "",
+                            tkb,
+                            log.bu || 0,
+                            log.tang || 0,
+                            total,
+                            (t.roles || []).join(', ')
+                        ];
+                    });
                     // @ts-ignore
                     const ws = XLSX.utils.aoa_to_sheet([[`BẢNG PHÂN CÔNG TUẦN ${w}`], [], headers, ...rows]);
                     // @ts-ignore
@@ -228,7 +237,7 @@ const App = () => {
             }
             if (!hasData) return alert("Chưa có dữ liệu phân công để xuất!");
             // @ts-ignore
-            XLSX.writeFile(wb, `Phan_Cong_Chuyen_Mon_Toan_Truong_Den_Tuan_${currentWeek}.xlsx`);
+            XLSX.writeFile(wb, `Phan_Cong_Chi_Tiet_Cac_Tuan_Den_Tuan_${currentWeek}.xlsx`);
         };
 
         const toggleRole = (e: React.MouseEvent, roleName: string) => {
@@ -545,7 +554,7 @@ const App = () => {
                                 });
                             });
                             // @ts-ignore
-                            const wsMaster = XLSX.utils.aoa_to_sheet([["MASTER_DATA_THCS_PRO_v8.6"], masterH, ...masterR]);
+                            const wsMaster = XLSX.utils.aoa_to_sheet([["MASTER_DATA_THCS_PRO_v8.7"], masterH, ...masterR]);
                             const confH = [["CẤU HÌNH HỆ THỐNG"], ["Định mức chuẩn", data.standardQuota], [], ["Môn học", "Khối 6", "Khối 7", "Khối 8", "Khối 9"]];
                             const subjR = data.subjectConfigs.map((s:any) => [s.name, s.p6, s.p7, s.p8, s.p9]);
                             // @ts-ignore
@@ -557,7 +566,7 @@ const App = () => {
                             // @ts-ignore
                             XLSX.utils.book_append_sheet(wb, wsMaster, "DATA_MASTER_RECOVER");
                             // @ts-ignore
-                            XLSX.writeFile(wb, `Sao_Luu_HT_THCS_v8.6.xlsx`);
+                            XLSX.writeFile(wb, `Sao_Luu_HT_THCS_v8.7.xlsx`);
                         }} className="bg-emerald-600 text-white px-4 py-2.5 rounded-xl flex items-center gap-2 font-black hover:bg-emerald-700 transition-all text-[11px] uppercase tracking-widest shadow-lg"><TableProperties size={16}/> Sao lưu Excel</button>
                         <button onClick={() => backupFileRef.current?.click()} className="bg-slate-50 text-slate-500 px-4 py-2.5 rounded-xl flex items-center gap-2 font-black hover:bg-slate-100 transition-all text-[11px] uppercase tracking-widest border border-slate-200"><Upload size={16}/> Khôi phục</button>
                         <input type="file" ref={backupFileRef} className="hidden" accept=".json,.xlsx,.xls" onChange={(e) => {
@@ -698,7 +707,7 @@ const App = () => {
                     <div className="flex items-center gap-3">
                         <div className="bg-blue-600 p-2 rounded-lg text-white shadow-lg rotate-2"><LayoutDashboard size={20}/></div>
                         <div>
-                            <h1 className="font-black text-lg tracking-tighter text-slate-800 uppercase italic leading-none">THCS GIẢNG DẠY <span className="text-blue-600 text-[10px] align-top font-black italic">PRO v8.6</span></h1>
+                            <h1 className="font-black text-lg tracking-tighter text-slate-800 uppercase italic leading-none">THCS GIẢNG DẠY <span className="text-blue-600 text-[10px] align-top font-black italic">PRO v8.7</span></h1>
                             <p className="text-[9px] font-bold uppercase text-slate-400 tracking-[0.2em] mt-1 italic leading-none">Professional System</p>
                         </div>
                     </div>
@@ -725,7 +734,7 @@ const App = () => {
                 </div>
             </main>
             <footer className="p-6 text-center text-[10px] font-black uppercase text-slate-300 tracking-[0.5em] italic flex items-center justify-center gap-3">
-                <CheckCircle2 size={14}/> Professional • v8.6
+                <CheckCircle2 size={14}/> Professional • v8.7
             </footer>
         </div>
     );
