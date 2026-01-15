@@ -65,10 +65,10 @@ const LocalAssignmentInput = ({ value, onSave, existingAssignments }: any) => {
         if (!normalized) { onSave(""); return; }
         
         const parts = normalized.split(';');
-        const allNewClasses: string[] = [];
         for (let part of parts) {
             const colonIdx = part.indexOf(':');
             if (colonIdx !== -1) {
+                const subName = part.substring(0, colonIdx).trim();
                 const clsPart = part.substring(colonIdx + 1);
                 const classes = clsPart.split(',').map(c => c.trim().replace(/\s/g, '')).filter(c => c);
                 for (let cls of classes) {
@@ -76,14 +76,12 @@ const LocalAssignmentInput = ({ value, onSave, existingAssignments }: any) => {
                         alert(`Lỗi: Lớp "${cls}" sai định dạng khối 6-9.`);
                         setLocal(value); return;
                     }
-                    allNewClasses.push(cls);
+                    const assignmentKey = `${subName}:${cls}`;
+                    if (existingAssignments[assignmentKey]) {
+                        alert(`Lỗi: Môn ${subName} tại lớp ${cls} đã được phân công cho ${existingAssignments[assignmentKey]}.`);
+                        setLocal(value); return;
+                    }
                 }
-            }
-        }
-        for (const cls of allNewClasses) {
-            if (existingAssignments[cls]) {
-                alert(`Lỗi: Lớp ${cls} đã được phân công cho ${existingAssignments[cls]}.`);
-                setLocal(value); return;
             }
         }
         onSave(normalized);
@@ -167,7 +165,7 @@ const App = () => {
         const prevWeekData = getWeekData(currentWeek - 1);
         const { teachers, assignments, logs = {} } = weekData;
 
-        const classToTeacherMap = useMemo(() => {
+        const fullAssignmentMap = useMemo(() => {
             const map: Record<string, string> = {};
             Object.entries(assignments).forEach(([tId, str]) => {
                 if (!str) return;
@@ -175,9 +173,12 @@ const App = () => {
                 const name = t ? t.name : "GV khác";
                 (str as string).split(';').forEach(p => {
                     const cIdx = p.indexOf(':');
-                    if (cIdx !== -1) p.substring(cIdx + 1).split(',').map(c => c.trim().replace(/\s/g, '')).filter(c => c).forEach(cls => {
-                        map[cls] = name;
-                    });
+                    if (cIdx !== -1) {
+                        const sub = p.substring(0, cIdx).trim();
+                        p.substring(cIdx + 1).split(',').map(c => c.trim().replace(/\s/g, '')).filter(c => c).forEach(cls => {
+                            map[`${sub}:${cls}`] = name;
+                        });
+                    }
                 });
             });
             return map;
@@ -213,7 +214,6 @@ const App = () => {
                 const wData = data.weeklyRecords[w];
                 if (wData && wData.teachers && wData.teachers.length > 0) {
                     hasData = true;
-                    // Cập nhật Header đầy đủ theo yêu cầu v8.7
                     const headers = ["Họ tên Giáo viên", "Phân công (Môn: Lớp)", "Số tiết TKB", "Dạy bù", "Tăng tiết", "Tổng cộng", "Chức vụ"];
                     const rows = wData.teachers.map((t: any) => {
                         const tkb = getTKBPeriods(wData.assignments[t.id] || "");
@@ -311,7 +311,8 @@ const App = () => {
                                 const clsList = cV.split(',').map(c => c.trim().toUpperCase()).filter(c => c);
                                 for (let c of clsList) {
                                     if(!isValidClassName(c)) return alert(`Lớp ${c} sai định dạng.`);
-                                    if(classToTeacherMap[c]) return alert(`Lớp ${c} đã được giao cho ${classToTeacherMap[c]}!`);
+                                    const key = `${sV}:${c}`;
+                                    if(fullAssignmentMap[key]) return alert(`Môn ${sV} tại lớp ${c} đã được giao cho ${fullAssignmentMap[key]}!`);
                                 }
                                 const tId = Date.now().toString();
                                 updateWeekData(currentWeek, {
@@ -369,10 +370,13 @@ const App = () => {
                                     if (id === t.id || !s) return;
                                     (s as string).split(';').forEach(p => {
                                         const cIdx = p.indexOf(':');
-                                        if (cIdx !== -1) p.substring(cIdx+1).split(',').map(c => c.trim()).filter(c => c).forEach(cls => {
-                                            const otherT = teachers.find(x => x.id === id);
-                                            others[cls] = otherT ? otherT.name : "GV khác";
-                                        });
+                                        if (cIdx !== -1) {
+                                            const sub = p.substring(0, cIdx).trim();
+                                            p.substring(cIdx+1).split(',').map(c => c.trim().replace(/\s/g, '')).filter(c => c).forEach(cls => {
+                                                const otherT = teachers.find(x => x.id === id);
+                                                others[`${sub}:${cls}`] = otherT ? otherT.name : "GV khác";
+                                            });
+                                        }
                                     });
                                 });
 
@@ -433,7 +437,8 @@ const App = () => {
                         <ChevronRight className="text-slate-200" size={20} />
                         <div className="flex items-center gap-3 px-3">
                             <label className="text-[10px] font-black uppercase text-slate-400 italic tracking-widest">Đến tuần</label>
-                            <input type="number" min={startRange} value={endRange} onChange={e => setEndRange(parseInt(e.target.value) || 1)} className="w-14 p-2 bg-slate-50 rounded-xl font-black text-center text-sm text-blue-600 border-none outline-none"/>
+                            {/* Fixed: changed endWeek to endRange which is defined in the parent component scope */}
+                            <input type="number" min={startRange} value={endRange || 1} onChange={e => setEndRange(parseInt(e.target.value) || 1)} className="w-14 p-2 bg-slate-50 rounded-xl font-black text-center text-sm text-blue-600 border-none outline-none"/>
                         </div>
                     </div>
                     <div className="text-right">
